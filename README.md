@@ -78,6 +78,24 @@ After deployment variables are set, you can verify the connection in two ways:
 If `DATABASE_URL` is missing, `/api/health/db` returns `503`.
 If the credentials or network are wrong, `/api/health/db` returns `500` with the connection error.
 
+## Coolify Dockerfile deployment
+
+This repo now supports Dockerfile-based deployment in Coolify.
+
+Recommended Coolify settings:
+
+- Build Pack: `Dockerfile`
+- Port: `3000`
+- Dockerfile location: `./Dockerfile`
+
+The container expects runtime environment variables from Coolify, especially:
+
+```bash
+DATABASE_URL=postgres://USER:PASSWORD@HOST:5432/postgres
+MOBILE_JOB_ACTIVE_STATUSES=approved,active,on_hold
+MOBILE_TIMESHEET_STATUS=submitted
+```
+
 ## Important integration note
 
 This app still leaves the existing Ops Manager application untouched, but submissions now land in the same normalized timesheet tables the main interface already uses. That means supervisor and manager review can happen in the existing workflow without needing a separate staging table.
