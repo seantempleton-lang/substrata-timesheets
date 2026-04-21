@@ -1,0 +1,413 @@
+.shell {
+  min-height: 100svh;
+  background:
+    radial-gradient(circle at top, rgba(203, 94, 47, 0.2), transparent 28%),
+    linear-gradient(180deg, #f4ede3 0%, #efe4d2 45%, #e6dac7 100%);
+  padding: 20px 14px 40px;
+}
+
+.handset {
+  width: min(100%, 430px);
+  margin: 0 auto;
+  display: grid;
+  gap: 14px;
+}
+
+.hero {
+  display: grid;
+  gap: 14px;
+  padding: 20px 18px 0;
+}
+
+.hero h1 {
+  font-size: clamp(2rem, 8vw, 3rem);
+  line-height: 0.98;
+  letter-spacing: -0.06em;
+  color: #1f1b17;
+  text-wrap: balance;
+}
+
+.eyebrow {
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: #9e4b28;
+  margin-bottom: 10px;
+}
+
+.heroMeta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.online,
+.offline {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  padding: 7px 12px;
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.online {
+  background: rgba(35, 116, 73, 0.14);
+  color: #205739;
+}
+
+.offline {
+  background: rgba(158, 75, 40, 0.16);
+  color: #8c401f;
+}
+
+.ghostButton,
+.choice,
+.choiceActive,
+.jobCard,
+.jobCardActive,
+.employeeCard,
+.employeeCardActive,
+.primaryButton {
+  appearance: none;
+  border: 0;
+  font: inherit;
+}
+
+.ghostButton {
+  border-radius: 999px;
+  padding: 10px 14px;
+  background: rgba(255, 255, 255, 0.72);
+  color: #2e261f;
+  font-weight: 700;
+}
+
+.statusPanel,
+.block,
+.submitBar {
+  border-radius: 28px;
+  background: rgba(255, 252, 247, 0.88);
+  backdrop-filter: blur(16px);
+  border: 1px solid rgba(72, 52, 36, 0.08);
+  box-shadow: 0 18px 40px rgba(73, 48, 23, 0.1);
+}
+
+.statusPanel {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 16px;
+  color: #342820;
+}
+
+.statusPanel p {
+  font-size: 0.92rem;
+  line-height: 1.4;
+}
+
+.statusPanel span {
+  white-space: nowrap;
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.statusPanel[data-tone="success"] {
+  background: rgba(233, 245, 238, 0.92);
+}
+
+.statusPanel[data-tone="warning"] {
+  background: rgba(249, 237, 221, 0.94);
+}
+
+.statusPanel[data-tone="error"] {
+  background: rgba(250, 224, 220, 0.95);
+}
+
+.block {
+  padding: 18px 16px;
+  display: grid;
+  gap: 14px;
+}
+
+.sectionHeading {
+  display: grid;
+  gap: 6px;
+}
+
+.sectionHeading h2 {
+  font-size: 1.05rem;
+  font-weight: 800;
+  color: #201914;
+}
+
+.sectionHeading p {
+  color: #675346;
+  font-size: 0.9rem;
+  line-height: 1.4;
+}
+
+.timeGrid {
+  display: grid;
+  gap: 12px;
+}
+
+.employeeSession,
+.employeeCard,
+.employeeCardActive {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 12px;
+}
+
+.employeeSession {
+  padding: 14px;
+  border-radius: 22px;
+  background: linear-gradient(135deg, rgba(203, 94, 47, 0.14), rgba(255, 255, 255, 0.6));
+}
+
+.employeeBadge {
+  display: grid;
+  place-items: center;
+  width: 46px;
+  height: 46px;
+  border-radius: 16px;
+  background: #2f2a26;
+  color: #fff7ee;
+  font-size: 0.9rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+}
+
+.employeeSessionCopy,
+.employeeCardCopy {
+  display: grid;
+  gap: 3px;
+}
+
+.employeeSessionCopy strong,
+.employeeCardCopy strong {
+  color: #211914;
+  font-size: 0.95rem;
+}
+
+.employeeSessionCopy span,
+.employeeCardCopy span {
+  color: #685245;
+  font-size: 0.8rem;
+  line-height: 1.3;
+}
+
+.employeeList {
+  display: grid;
+  gap: 10px;
+  max-height: 280px;
+  overflow-y: auto;
+}
+
+.employeeCard,
+.employeeCardActive {
+  border-radius: 22px;
+  padding: 12px;
+  text-align: left;
+}
+
+.employeeCard {
+  background: #f6ecdf;
+  color: #463529;
+}
+
+.employeeCardActive {
+  background: linear-gradient(135deg, #2c2925 0%, #3d332c 100%);
+}
+
+.employeeCardActive .employeeCardCopy strong,
+.employeeCardActive .employeeCardCopy span {
+  color: #fff7ee;
+}
+
+.employeeCardActive .employeeBadge {
+  background: #fff7ee;
+  color: #2f2a26;
+}
+
+.field {
+  display: grid;
+  gap: 7px;
+}
+
+.field span {
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: #523d30;
+}
+
+.field input,
+.field textarea {
+  width: 100%;
+  border: 1px solid rgba(104, 77, 57, 0.14);
+  border-radius: 18px;
+  padding: 14px 15px;
+  font: inherit;
+  color: #221a14;
+  background: #fffdf9;
+}
+
+.field textarea {
+  resize: vertical;
+  min-height: 92px;
+}
+
+.choiceRow,
+.quickHours {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.choice,
+.choiceActive {
+  border-radius: 999px;
+  padding: 11px 14px;
+  font-size: 0.85rem;
+  font-weight: 700;
+}
+
+.choice {
+  background: #f1e5d6;
+  color: #5a4639;
+}
+
+.choiceActive {
+  background: #2f2a26;
+  color: #fff7ee;
+}
+
+.jobList {
+  display: grid;
+  gap: 10px;
+  max-height: 260px;
+  overflow-y: auto;
+  padding-right: 2px;
+}
+
+.jobCard,
+.jobCardActive {
+  text-align: left;
+  display: grid;
+  gap: 4px;
+  border-radius: 22px;
+  padding: 14px;
+}
+
+.jobCard {
+  background: #f6ecdf;
+  color: #463529;
+}
+
+.jobCardActive {
+  background: linear-gradient(135deg, #2c2925 0%, #3d332c 100%);
+  color: #fef7ef;
+}
+
+.jobCard strong,
+.jobCardActive strong {
+  font-size: 0.92rem;
+  line-height: 1.25;
+}
+
+.jobCard span,
+.jobCardActive span {
+  font-size: 0.8rem;
+  opacity: 0.84;
+}
+
+.summaryStrip {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  padding: 14px;
+  border-radius: 22px;
+  background: linear-gradient(135deg, rgba(203, 94, 47, 0.1), rgba(38, 33, 28, 0.06));
+}
+
+.summaryStrip span {
+  display: block;
+  margin-bottom: 4px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: #7b5844;
+}
+
+.summaryStrip strong {
+  font-size: 0.9rem;
+  line-height: 1.25;
+  color: #251d17;
+}
+
+.toggle {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 16px;
+  border-radius: 20px;
+  background: #f6ecdf;
+  color: #35281f;
+  font-weight: 700;
+}
+
+.toggle input {
+  width: 20px;
+  height: 20px;
+  accent-color: #9e4b28;
+}
+
+.submitBar {
+  position: sticky;
+  bottom: calc(env(safe-area-inset-bottom, 0px) + 12px);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px;
+}
+
+.submitBar span {
+  display: block;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: #7c6251;
+}
+
+.submitBar strong {
+  font-size: 1.2rem;
+  color: #211915;
+}
+
+.primaryButton {
+  border-radius: 20px;
+  padding: 14px 18px;
+  background: linear-gradient(135deg, #cb5e2f 0%, #8e3414 100%);
+  color: #fff8f1;
+  font-weight: 800;
+  min-width: 156px;
+}
+
+.primaryButton:disabled {
+  opacity: 0.62;
+}
+
+@media (min-width: 700px) {
+  .shell {
+    padding-top: 28px;
+  }
+
+  .handset {
+    width: 430px;
+  }
+}
