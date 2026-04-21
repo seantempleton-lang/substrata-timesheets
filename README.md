@@ -53,6 +53,31 @@ npm.cmd run dev
 
 Open [http://localhost:3000](http://localhost:3000).
 
+## Verifying Postgres connectivity
+
+Yes, you will need to add environment variables in the app deployment for live database access.
+
+Minimum required:
+
+```bash
+DATABASE_URL=postgres://USER:PASSWORD@HOST:5432/SubStrata-OpsManager
+```
+
+Optional mobile-specific behavior:
+
+```bash
+MOBILE_JOB_ACTIVE_STATUSES=approved,active,on_hold
+MOBILE_TIMESHEET_STATUS=submitted
+```
+
+After deployment variables are set, you can verify the connection in two ways:
+
+- Open `/api/health/db` and confirm it returns `ok: true`
+- Open the app and confirm the banner no longer says it is running in demo mode
+
+If `DATABASE_URL` is missing, `/api/health/db` returns `503`.
+If the credentials or network are wrong, `/api/health/db` returns `500` with the connection error.
+
 ## Important integration note
 
 This app still leaves the existing Ops Manager application untouched, but submissions now land in the same normalized timesheet tables the main interface already uses. That means supervisor and manager review can happen in the existing workflow without needing a separate staging table.
