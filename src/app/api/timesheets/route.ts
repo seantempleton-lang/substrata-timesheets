@@ -1,6 +1,7 @@
 import { ZodError } from "zod";
 import { NextResponse } from "next/server";
 
+import { getCurrentEmployee } from "@/lib/auth";
 import { createTimesheetEntry } from "@/lib/submissions";
 import { isDatabaseConfigured } from "@/lib/db";
 import { timesheetPayloadSchema } from "@/lib/timesheets";
@@ -16,8 +17,22 @@ export async function POST(request: Request) {
       );
     }
 
+    const currentEmployee = await getCurrentEmployee();
+
+    if (!currentEmployee) {
+      return NextResponse.json(
+        { error: "You must be logged in to submit a timesheet." },
+        { status: 401 },
+      );
+    }
+
     const body = await request.json();
-    const payload = timesheetPayloadSchema.parse(body);
+    const payload = timesheetPayloadSchema.parse({
+      ...body,
+      userId: currentEmployee.id,
+      employeeName: currentEmployee.fullName,
+      employeeCode: currentEmployee.employeeCode,
+    });
     const record = await createTimesheetEntry(payload);
 
     return NextResponse.json({

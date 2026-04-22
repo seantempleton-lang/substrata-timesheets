@@ -5,6 +5,7 @@ Separate mobile-only timesheet app for field crews. This project is designed to 
 ## What it does
 
 - Provides a mobile-first timesheet entry flow for field staff.
+- Provides a mobile login prompt for approved field staff accounts.
 - Pulls jobs/projects from Postgres so the user can select the correct job.
 - Auto-fills client and site details from the chosen job.
 - Enforces a mandatory `0.5` hour unpaid lunch break for worked shifts.
@@ -37,6 +38,8 @@ This app is now aligned to the main Ops Manager schema you shared:
 - `timesheets`
 - `timesheet_days`
 - `timesheet_entries`
+- `mobile_auth_accounts`
+- `mobile_auth_sessions`
 
 ## Database setup
 
@@ -95,6 +98,13 @@ DATABASE_URL=postgres://USER:PASSWORD@HOST:5432/postgres
 MOBILE_JOB_ACTIVE_STATUSES=approved,active,on_hold
 MOBILE_TIMESHEET_STATUS=submitted
 ```
+
+Mobile login is now backed by database tables:
+
+- `mobile_auth_accounts` links a login identity to an `app_users` personnel record
+- `mobile_auth_sessions` stores hashed session tokens for cookie-based sign-in
+
+The helper SQL in [db/mobile-timesheets.sql](/C:/Users/SeanTempleton/OneDrive%20-%20McMillan%20Drilling%20Ltd/Documents/GitHub/substrata-timesheets/db/mobile-timesheets.sql) seeds an initial Rahul Negi account linked by `app_users.email = 'rahulnegi@drilling.co.nz'`.
 
 ## Important integration note
 

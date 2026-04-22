@@ -15,6 +15,7 @@ export type EmployeeOption = {
   fullName: string;
   initials: string;
   roleTitle: string;
+  email?: string;
   division?: string;
   region?: string;
 };
@@ -42,7 +43,6 @@ export type TimesheetPayload = {
 };
 
 export type AppBootstrap = {
-  employees: EmployeeOption[];
   jobs: JobOption[];
   databaseReady: boolean;
   mode: "live" | "demo";

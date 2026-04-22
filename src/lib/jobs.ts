@@ -10,14 +10,13 @@ export const getAppBootstrap = cache(async (): Promise<AppBootstrap> => {
   }
 
   try {
-    const [employees, jobs] = await Promise.all([listEmployees(), listJobs()]);
+    const jobs = await listJobs();
 
     return {
-      employees,
       jobs,
       databaseReady: true,
       mode: "live",
-      message: "Connected to the production Postgres job lookup.",
+      message: "Connected",
     };
   } catch (error) {
     return {
@@ -30,16 +29,17 @@ export const getAppBootstrap = cache(async (): Promise<AppBootstrap> => {
   }
 });
 
-export async function listEmployees(): Promise<EmployeeOption[]> {
+export async function getEmployeeByEmail(email: string): Promise<EmployeeOption | null> {
   const db = getDb();
 
-  const rows = await db.unsafe<
+  const [row] = await db.unsafe<
     Array<{
       id: string;
       employee_code: string;
       full_name: string;
       initials: string;
       role_title: string;
+      email: string | null;
       division: string | null;
       region: string | null;
     }>
@@ -51,23 +51,31 @@ export async function listEmployees(): Promise<EmployeeOption[]> {
         full_name,
         initials,
         role_title,
+        email,
         division,
         region
       from app_users
       where is_active = true
-      order by full_name asc
+        and lower(email) = lower($1::text)
+      limit 1
     `,
+    [email],
   );
 
-  return rows.map((row) => ({
+  if (!row) {
+    return null;
+  }
+
+  return {
     id: row.id,
     employeeCode: row.employee_code,
     fullName: row.full_name,
     initials: row.initials,
     roleTitle: row.role_title,
+    email: row.email ?? undefined,
     division: row.division ?? undefined,
     region: row.region ?? undefined,
-  }));
+  };
 }
 
 export async function listJobs(): Promise<JobOption[]> {

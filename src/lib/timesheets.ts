@@ -165,7 +165,6 @@ export const timesheetPayloadSchema = z
 
 export function getDefaultBootstrap(): AppBootstrap {
   return {
-    employees: demoEmployees,
     jobs: demoJobs,
     databaseReady: false,
     mode: "demo",
