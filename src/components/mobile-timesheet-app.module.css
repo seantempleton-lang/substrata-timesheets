@@ -66,11 +66,9 @@
 .ghostButton,
 .choice,
 .choiceActive,
-.jobCard,
-.jobCardActive,
-.employeeCard,
-.employeeCardActive,
-.primaryButton {
+.primaryButton,
+.secondaryButton,
+.slimButton {
   appearance: none;
   border: 0;
   font: inherit;
@@ -148,21 +146,11 @@
   line-height: 1.4;
 }
 
-.timeGrid {
-  display: grid;
-  gap: 12px;
-}
-
-.employeeSession,
-.employeeCard,
-.employeeCardActive {
+.employeeSession {
   display: grid;
   grid-template-columns: auto 1fr auto;
   align-items: center;
   gap: 12px;
-}
-
-.employeeSession {
   padding: 14px;
   border-radius: 22px;
   background: linear-gradient(135deg, rgba(203, 94, 47, 0.14), rgba(255, 255, 255, 0.6));
@@ -181,23 +169,26 @@
   letter-spacing: 0.06em;
 }
 
-.employeeSessionCopy,
-.employeeCardCopy {
+.employeeSessionCopy {
   display: grid;
   gap: 3px;
 }
 
-.employeeSessionCopy strong,
-.employeeCardCopy strong {
+.employeeSessionCopy strong {
   color: #211914;
   font-size: 0.95rem;
 }
 
-.employeeSessionCopy span,
-.employeeCardCopy span {
+.employeeSessionCopy span {
   color: #685245;
   font-size: 0.8rem;
   line-height: 1.3;
+}
+
+.sheetHeader,
+.modeStack {
+  display: grid;
+  gap: 12px;
 }
 
 .field {
@@ -205,14 +196,16 @@
   gap: 7px;
 }
 
-.field span {
+.field span,
+.microLabel {
   font-size: 0.82rem;
   font-weight: 700;
   color: #523d30;
 }
 
 .field input,
-.field textarea {
+.field textarea,
+.field select {
   width: 100%;
   border: 1px solid rgba(104, 77, 57, 0.14);
   border-radius: 18px;
@@ -235,7 +228,9 @@
 }
 
 .choice,
-.choiceActive {
+.choiceActive,
+.secondaryButton,
+.slimButton {
   border-radius: 999px;
   padding: 11px 14px;
   font-size: 0.85rem;
@@ -252,48 +247,9 @@
   color: #fff7ee;
 }
 
-.jobList {
-  display: grid;
-  gap: 10px;
-  max-height: 260px;
-  overflow-y: auto;
-  padding-right: 2px;
-}
-
-.jobCard,
-.jobCardActive {
-  text-align: left;
-  display: grid;
-  gap: 4px;
-  border-radius: 22px;
-  padding: 14px;
-}
-
-.jobCard {
-  background: #f6ecdf;
-  color: #463529;
-}
-
-.jobCardActive {
-  background: linear-gradient(135deg, #2c2925 0%, #3d332c 100%);
-  color: #fef7ef;
-}
-
-.jobCard strong,
-.jobCardActive strong {
-  font-size: 0.92rem;
-  line-height: 1.25;
-}
-
-.jobCard span,
-.jobCardActive span {
-  font-size: 0.8rem;
-  opacity: 0.84;
-}
-
 .summaryStrip {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 10px;
   padding: 14px;
   border-radius: 22px;
@@ -311,9 +267,77 @@
 }
 
 .summaryStrip strong {
-  font-size: 0.9rem;
+  font-size: 0.95rem;
   line-height: 1.25;
   color: #251d17;
+}
+
+.entryList {
+  display: grid;
+  gap: 12px;
+}
+
+.entryCard {
+  display: grid;
+  gap: 12px;
+  padding: 14px;
+  border-radius: 22px;
+  background: #f7efe4;
+  border: 1px solid rgba(104, 77, 57, 0.1);
+}
+
+.entryCardHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.entryCardHeader strong {
+  display: block;
+  font-size: 0.95rem;
+  color: #221914;
+  line-height: 1.25;
+}
+
+.entryIndex {
+  margin-bottom: 5px;
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: #8a5e49;
+}
+
+.jobMeta {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  padding: 12px 14px;
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.7);
+}
+
+.jobMeta span {
+  display: block;
+  margin-bottom: 4px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: #8a6a57;
+}
+
+.jobMeta strong {
+  color: #2b2019;
+  font-size: 0.88rem;
+  line-height: 1.3;
+}
+
+.timeGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
 }
 
 .toggle {
@@ -331,6 +355,12 @@
   width: 20px;
   height: 20px;
   accent-color: #9e4b28;
+}
+
+.secondaryButton,
+.slimButton {
+  background: rgba(47, 42, 38, 0.08);
+  color: #2f2a26;
 }
 
 .submitBar {
@@ -365,7 +395,9 @@
   min-width: 156px;
 }
 
-.primaryButton:disabled {
+.primaryButton:disabled,
+.secondaryButton:disabled,
+.slimButton:disabled {
   opacity: 0.62;
 }
 

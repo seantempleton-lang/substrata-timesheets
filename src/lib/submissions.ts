@@ -1,5 +1,8 @@
 import { getDb } from "@/lib/db";
-import { timesheetPayloadSchema } from "@/lib/timesheets";
+import {
+  allocatePaidHoursAcrossEntries,
+  timesheetPayloadSchema,
+} from "@/lib/timesheets";
 import type { TimesheetPayload } from "@/lib/types";
 
 function getLeaveType(entryType: TimesheetPayload["entryType"]) {
@@ -56,12 +59,8 @@ export async function createTimesheetEntry(input: TimesheetPayload) {
 
     const leaveType = getLeaveType(payload.entryType);
     const dayType = payload.entryType === "work" ? "work" : "leave";
-    const entryHours = payload.entryType === "work" ? payload.paidHours : payload.leaveHours ?? payload.paidHours;
-    const rateType = payload.entryType === "work" ? "ordinary" : "day_off";
 
-    const [timesheet] = await transaction.unsafe<
-      Array<{ id: string; status: string }>
-    >(
+    const [timesheet] = await transaction.unsafe<Array<{ id: string; status: string }>>(
       `
         insert into timesheets (
           user_id,
@@ -137,36 +136,70 @@ export async function createTimesheetEntry(input: TimesheetPayload) {
       [timesheetDay.id],
     );
 
-    await transaction.unsafe(
-      `
-        insert into timesheet_entries (
-          timesheet_day_id,
-          job_id,
-          start_time,
-          end_time,
-          hours,
-          rate_type,
-          notes
-        ) values (
-          $1::uuid,
-          $2::uuid,
-          $3::time,
-          $4::time,
-          $5::numeric,
-          $6::text,
-          $7::text
-        )
-      `,
-      [
-        timesheetDay.id,
-        payload.entryType === "work" ? payload.jobId ?? null : null,
-        payload.entryType === "work" ? payload.startTime ?? null : null,
-        payload.entryType === "work" ? payload.finishTime ?? null : null,
-        entryHours,
-        rateType,
-        payload.notes ?? null,
-      ],
-    );
+    if (payload.entryType === "work") {
+      const paidHoursByEntry = allocatePaidHoursAcrossEntries(payload.workEntries);
+
+      for (const [index, entry] of payload.workEntries.entries()) {
+        await transaction.unsafe(
+          `
+            insert into timesheet_entries (
+              timesheet_day_id,
+              job_id,
+              start_time,
+              end_time,
+              hours,
+              rate_type,
+              notes
+            ) values (
+              $1::uuid,
+              $2::uuid,
+              $3::time,
+              $4::time,
+              $5::numeric,
+              $6::text,
+              $7::text
+            )
+          `,
+          [
+            timesheetDay.id,
+            entry.jobId,
+            entry.startTime,
+            entry.finishTime,
+            paidHoursByEntry[index],
+            "ordinary",
+            entry.notes ?? null,
+          ],
+        );
+      }
+    } else {
+      await transaction.unsafe(
+        `
+          insert into timesheet_entries (
+            timesheet_day_id,
+            job_id,
+            start_time,
+            end_time,
+            hours,
+            rate_type,
+            notes
+          ) values (
+            $1::uuid,
+            null,
+            null,
+            null,
+            $2::numeric,
+            $3::text,
+            $4::text
+          )
+        `,
+        [
+          timesheetDay.id,
+          payload.leaveHours ?? payload.paidHours,
+          "day_off",
+          payload.notes ?? null,
+        ],
+      );
+    }
 
     const [totals] = await transaction.unsafe<
       Array<{ computed_total_hours: string; computed_total_overnights: number }>
@@ -192,7 +225,7 @@ export async function createTimesheetEntry(input: TimesheetPayload) {
       `,
       [
         timesheet.id,
-        totals?.computed_total_hours ?? String(entryHours),
+        totals?.computed_total_hours ?? String(payload.paidHours),
         totals?.computed_total_overnights ?? (payload.overnightAllowance ? 1 : 0),
       ],
     );
@@ -203,6 +236,7 @@ export async function createTimesheetEntry(input: TimesheetPayload) {
       userId: user.id,
       userName: user.full_name,
       workDate: payload.workDate,
+      entryCount: payload.entryType === "work" ? payload.workEntries.length : 1,
     };
   });
 }

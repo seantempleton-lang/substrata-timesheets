@@ -1,11 +1,20 @@
 import { z } from "zod";
 
-import type { AppBootstrap, EmployeeOption, EntryType, JobOption } from "@/lib/types";
+import type {
+  AppBootstrap,
+  EmployeeOption,
+  EntryType,
+  JobOption,
+  TimesheetWorkEntryPayload,
+} from "@/lib/types";
 
-const HALF_HOUR_BREAK = 0.5;
+export const MANDATORY_LUNCH_BREAK_HOURS = 0.5;
+export const TIME_STEP_MINUTES = 15;
+
+const DAY_MINUTES = 24 * 60;
 
 export const entryTypeLabels: Record<EntryType, string> = {
-  work: "Worked shift",
+  work: "Worked time",
   annual_leave: "Annual leave",
   sick_leave: "Sick leave",
   unpaid_leave: "Unpaid leave",
@@ -68,31 +77,122 @@ export const demoEmployees: EmployeeOption[] = [
   },
 ];
 
-export function calculatePaidHours(startTime: string, finishTime: string): number {
+export function parseTimeToMinutes(value: string): number {
+  const [hours, minutes] = value.split(":").map(Number);
+
+  if (Number.isNaN(hours) || Number.isNaN(minutes)) {
+    return Number.NaN;
+  }
+
+  return hours * 60 + minutes;
+}
+
+export function isQuarterHourTime(value: string): boolean {
+  const minutes = parseTimeToMinutes(value);
+
+  if (!Number.isFinite(minutes) || minutes < 0 || minutes >= DAY_MINUTES) {
+    return false;
+  }
+
+  return minutes % TIME_STEP_MINUTES === 0;
+}
+
+export function formatHours(value: number): string {
+  return value.toFixed(2).replace(/\.00$/, "").replace(/(\.\d)0$/, "$1");
+}
+
+export function buildTimeOptions(): string[] {
+  return Array.from({ length: DAY_MINUTES / TIME_STEP_MINUTES }, (_, index) => {
+    const totalMinutes = index * TIME_STEP_MINUTES;
+    const hours = String(Math.floor(totalMinutes / 60)).padStart(2, "0");
+    const minutes = String(totalMinutes % 60).padStart(2, "0");
+    return `${hours}:${minutes}`;
+  });
+}
+
+export function calculateWorkedMinutes(startTime: string, finishTime: string): number {
   const start = parseTimeToMinutes(startTime);
   const finish = parseTimeToMinutes(finishTime);
 
-  if (finish <= start) {
+  if (!Number.isFinite(start) || !Number.isFinite(finish) || finish <= start) {
     return 0;
   }
 
-  const paidMinutes = finish - start - HALF_HOUR_BREAK * 60;
+  return finish - start;
+}
+
+export function calculatePaidHours(startTime: string, finishTime: string): number {
+  return calculateDayPaidHours([{ startTime, finishTime }]);
+}
+
+export function calculateDayPaidHours(
+  entries: Array<Pick<TimesheetWorkEntryPayload, "startTime" | "finishTime">>,
+): number {
+  const totalMinutes = entries.reduce(
+    (sum, entry) => sum + calculateWorkedMinutes(entry.startTime, entry.finishTime),
+    0,
+  );
+  const paidMinutes = totalMinutes - MANDATORY_LUNCH_BREAK_HOURS * 60;
 
   if (paidMinutes <= 0) {
     return 0;
   }
 
-  return roundToHalfHour(paidMinutes / 60);
+  return paidMinutes / 60;
 }
 
-export function parseTimeToMinutes(value: string): number {
-  const [hours, minutes] = value.split(":").map(Number);
-  return hours * 60 + minutes;
+export function allocatePaidHoursAcrossEntries(
+  entries: Array<Pick<TimesheetWorkEntryPayload, "startTime" | "finishTime">>,
+): number[] {
+  const rawMinutes = entries.map((entry) => calculateWorkedMinutes(entry.startTime, entry.finishTime));
+  let remainingLunchMinutes = MANDATORY_LUNCH_BREAK_HOURS * 60;
+  const adjustedMinutes = [...rawMinutes];
+
+  const indexesByDuration = rawMinutes
+    .map((minutes, index) => ({ minutes, index }))
+    .sort((left, right) => right.minutes - left.minutes)
+    .map((item) => item.index);
+
+  for (const index of indexesByDuration) {
+    if (remainingLunchMinutes <= 0) {
+      break;
+    }
+
+    const deduction = Math.min(adjustedMinutes[index], remainingLunchMinutes);
+    adjustedMinutes[index] -= deduction;
+    remainingLunchMinutes -= deduction;
+  }
+
+  return adjustedMinutes.map((minutes) => Math.max(0, minutes) / 60);
 }
 
-export function roundToHalfHour(value: number): number {
-  return Math.round(value * 2) / 2;
+function hasOverlappingEntries(entries: TimesheetWorkEntryPayload[]): boolean {
+  const ordered = entries
+    .map((entry) => ({
+      start: parseTimeToMinutes(entry.startTime),
+      finish: parseTimeToMinutes(entry.finishTime),
+    }))
+    .sort((left, right) => left.start - right.start);
+
+  for (let index = 1; index < ordered.length; index += 1) {
+    if (ordered[index].start < ordered[index - 1].finish) {
+      return true;
+    }
+  }
+
+  return false;
 }
+
+const workEntrySchema = z.object({
+  jobId: z.string().trim().min(1, "Choose a job."),
+  jobCode: z.string().trim().optional(),
+  jobName: z.string().trim().optional(),
+  clientName: z.string().trim().optional(),
+  siteName: z.string().trim().optional(),
+  startTime: z.string().regex(/^\d{2}:\d{2}$/),
+  finishTime: z.string().regex(/^\d{2}:\d{2}$/),
+  notes: z.string().trim().max(500).optional(),
+});
 
 export const timesheetPayloadSchema = z
   .object({
@@ -101,16 +201,13 @@ export const timesheetPayloadSchema = z
     employeeCode: z.string().trim().max(50).optional(),
     workDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Work date is required."),
     entryType: z.enum(["work", "annual_leave", "sick_leave", "unpaid_leave"]),
-    jobId: z.string().trim().optional(),
-    jobCode: z.string().trim().optional(),
-    jobName: z.string().trim().optional(),
-    clientName: z.string().trim().optional(),
-    siteName: z.string().trim().optional(),
-    startTime: z.string().regex(/^\d{2}:\d{2}$/).optional(),
-    finishTime: z.string().regex(/^\d{2}:\d{2}$/).optional(),
-    leaveHours: z.number().min(0.5).max(24).optional(),
-    lunchBreakHours: z.number().min(HALF_HOUR_BREAK).max(HALF_HOUR_BREAK),
-    paidHours: z.number().min(0.5).max(24),
+    workEntries: z.array(workEntrySchema).default([]),
+    leaveHours: z.number().min(0.25).max(24).optional(),
+    lunchBreakHours: z
+      .number()
+      .min(MANDATORY_LUNCH_BREAK_HOURS)
+      .max(MANDATORY_LUNCH_BREAK_HOURS),
+    paidHours: z.number().min(0.25).max(24),
     overnightAllowance: z.boolean(),
     notes: z.string().trim().max(500).optional(),
     submittedAt: z.string().optional(),
@@ -118,30 +215,56 @@ export const timesheetPayloadSchema = z
   })
   .superRefine((payload, ctx) => {
     if (payload.entryType === "work") {
-      if (!payload.jobId) {
+      if (payload.workEntries.length === 0) {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
-          path: ["jobId"],
-          message: "Choose a job before submitting.",
-        });
-      }
-
-      if (!payload.startTime || !payload.finishTime) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          path: ["startTime"],
-          message: "Start and finish times are required for worked shifts.",
+          path: ["workEntries"],
+          message: "Add at least one time entry before submitting.",
         });
         return;
       }
 
-      const calculatedPaidHours = calculatePaidHours(payload.startTime, payload.finishTime);
+      payload.workEntries.forEach((entry, index) => {
+        if (!isQuarterHourTime(entry.startTime)) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: ["workEntries", index, "startTime"],
+            message: "Start time must be in 15 minute increments.",
+          });
+        }
+
+        if (!isQuarterHourTime(entry.finishTime)) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: ["workEntries", index, "finishTime"],
+            message: "Finish time must be in 15 minute increments.",
+          });
+        }
+
+        if (calculateWorkedMinutes(entry.startTime, entry.finishTime) <= 0) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: ["workEntries", index, "finishTime"],
+            message: "Finish time must be later than start time.",
+          });
+        }
+      });
+
+      if (hasOverlappingEntries(payload.workEntries)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["workEntries"],
+          message: "Entries on the same day cannot overlap.",
+        });
+      }
+
+      const calculatedPaidHours = calculateDayPaidHours(payload.workEntries);
 
       if (calculatedPaidHours <= 0) {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
-          path: ["finishTime"],
-          message: "Finish time must be later than start time and include a 30 minute lunch break.",
+          path: ["paidHours"],
+          message: "The day's entries must leave paid time after the mandatory 30 minute lunch break.",
         });
       }
 
@@ -149,17 +272,27 @@ export const timesheetPayloadSchema = z
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
           path: ["paidHours"],
-          message: "Paid hours do not match the enforced 30 minute lunch deduction.",
+          message: "Paid hours do not match the combined entries with the enforced 30 minute lunch deduction.",
         });
       }
     }
 
-    if (payload.entryType !== "work" && !payload.leaveHours) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ["leaveHours"],
-        message: "Leave hours are required for leave entries.",
-      });
+    if (payload.entryType !== "work") {
+      if (!payload.leaveHours) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["leaveHours"],
+          message: "Leave hours are required for leave entries.",
+        });
+      }
+
+      if (payload.workEntries.length > 0) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["workEntries"],
+          message: "Leave days cannot also include worked time entries.",
+        });
+      }
     }
   });
 

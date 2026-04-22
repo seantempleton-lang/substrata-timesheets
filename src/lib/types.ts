@@ -20,19 +20,24 @@ export type EmployeeOption = {
   region?: string;
 };
 
+export type TimesheetWorkEntryPayload = {
+  jobId: string;
+  jobCode?: string;
+  jobName?: string;
+  clientName?: string;
+  siteName?: string;
+  startTime: string;
+  finishTime: string;
+  notes?: string;
+};
+
 export type TimesheetPayload = {
   userId?: string;
   employeeName: string;
   employeeCode?: string;
   workDate: string;
   entryType: EntryType;
-  jobId?: string;
-  jobCode?: string;
-  jobName?: string;
-  clientName?: string;
-  siteName?: string;
-  startTime?: string;
-  finishTime?: string;
+  workEntries: TimesheetWorkEntryPayload[];
   leaveHours?: number;
   lunchBreakHours: number;
   paidHours: number;

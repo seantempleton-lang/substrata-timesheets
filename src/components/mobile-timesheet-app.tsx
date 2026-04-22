@@ -1,10 +1,24 @@
 "use client";
 
-import { type ChangeEvent, startTransition, useDeferredValue, useEffect, useMemo, useState } from "react";
+import { startTransition, useEffect, useMemo, useState } from "react";
 
 import styles from "./mobile-timesheet-app.module.css";
-import { calculatePaidHours, entryTypeLabels, formatToday } from "@/lib/timesheets";
-import type { AppBootstrap, EmployeeOption, EntryType, JobOption, TimesheetPayload } from "@/lib/types";
+import {
+  buildTimeOptions,
+  calculateDayPaidHours,
+  entryTypeLabels,
+  formatHours,
+  formatToday,
+  MANDATORY_LUNCH_BREAK_HOURS,
+} from "@/lib/timesheets";
+import type {
+  AppBootstrap,
+  EmployeeOption,
+  EntryType,
+  JobOption,
+  TimesheetPayload,
+  TimesheetWorkEntryPayload,
+} from "@/lib/types";
 
 type SubmissionState = {
   tone: "idle" | "success" | "warning" | "error";
@@ -22,21 +36,43 @@ type LoginState = {
   password: string;
 };
 
+type WorkEntryFormState = {
+  id: string;
+  jobId: string;
+  startTime: string;
+  finishTime: string;
+  notes: string;
+};
+
 type FormState = {
   userId: string;
   employeeName: string;
   employeeCode: string;
   workDate: string;
   entryType: EntryType;
-  jobId: string;
-  startTime: string;
-  finishTime: string;
+  workEntries: WorkEntryFormState[];
   leaveHours: string;
   overnightAllowance: boolean;
   notes: string;
 };
 
 const queueStorageKey = "substrata.mobile.pending-timesheets.v1";
+const timeOptions = buildTimeOptions();
+const leaveHourOptions = ["4", "8", "10", "12"];
+
+function createId() {
+  return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function createEmptyWorkEntry(): WorkEntryFormState {
+  return {
+    id: createId(),
+    jobId: "",
+    startTime: "07:00",
+    finishTime: "17:00",
+    notes: "",
+  };
+}
 
 function createInitialForm(): FormState {
   return {
@@ -45,9 +81,7 @@ function createInitialForm(): FormState {
     employeeCode: "",
     workDate: formatToday(),
     entryType: "work",
-    jobId: "",
-    startTime: "07:00",
-    finishTime: "17:00",
+    workEntries: [createEmptyWorkEntry()],
     leaveHours: "8",
     overnightAllowance: false,
     notes: "",
@@ -70,11 +104,28 @@ function createInitialFormForEmployee(employee: EmployeeOption | null): FormStat
 }
 
 function buildPayload(form: FormState, jobs: JobOption[]): TimesheetPayload {
-  const selectedJob = jobs.find((job) => job.id === form.jobId);
-  const paidHours =
+  const workEntries: TimesheetWorkEntryPayload[] =
     form.entryType === "work"
-      ? calculatePaidHours(form.startTime, form.finishTime)
-      : Number(form.leaveHours);
+      ? form.workEntries
+          .filter((entry) => entry.jobId)
+          .map((entry) => {
+            const selectedJob = jobs.find((job) => job.id === entry.jobId);
+
+            return {
+              jobId: entry.jobId,
+              jobCode: selectedJob?.code,
+              jobName: selectedJob?.name,
+              clientName: selectedJob?.clientName,
+              siteName: selectedJob?.siteName,
+              startTime: entry.startTime,
+              finishTime: entry.finishTime,
+              notes: entry.notes.trim() || undefined,
+            };
+          })
+      : [];
+
+  const paidHours =
+    form.entryType === "work" ? calculateDayPaidHours(workEntries) : Number(form.leaveHours);
 
   return {
     userId: form.userId || undefined,
@@ -82,15 +133,9 @@ function buildPayload(form: FormState, jobs: JobOption[]): TimesheetPayload {
     employeeCode: form.employeeCode.trim() || undefined,
     workDate: form.workDate,
     entryType: form.entryType,
-    jobId: selectedJob?.id,
-    jobCode: selectedJob?.code,
-    jobName: selectedJob?.name,
-    clientName: selectedJob?.clientName,
-    siteName: selectedJob?.siteName,
-    startTime: form.entryType === "work" ? form.startTime : undefined,
-    finishTime: form.entryType === "work" ? form.finishTime : undefined,
+    workEntries,
     leaveHours: form.entryType === "work" ? undefined : Number(form.leaveHours),
-    lunchBreakHours: 0.5,
+    lunchBreakHours: MANDATORY_LUNCH_BREAK_HOURS,
     paidHours,
     overnightAllowance: form.overnightAllowance,
     notes: form.notes.trim() || undefined,
@@ -194,7 +239,7 @@ async function flushPendingQueueRequest(
   if (remaining.length === 0) {
     setStatus({
       tone: "success",
-      message: "Pending offline entries were synced to Postgres.",
+      message: "Pending offline day sheets were synced to Postgres.",
     });
   }
 }
@@ -213,7 +258,6 @@ export function MobileTimesheetApp({
     email: initialEmployee?.email ?? "",
     password: "",
   });
-  const [jobSearch, setJobSearch] = useState("");
   const [pendingCount, setPendingCount] = useState(() =>
     typeof window === "undefined" ? 0 : readQueue().length,
   );
@@ -228,27 +272,27 @@ export function MobileTimesheetApp({
     message: bootstrap.message,
   });
 
-  const deferredJobSearch = useDeferredValue(jobSearch);
-  const filteredJobs = useMemo(() => {
-    const needle = deferredJobSearch.trim().toLowerCase();
-
-    if (!needle) {
-      return jobs;
-    }
-
-    return jobs.filter((job) =>
-      [job.code, job.name, job.clientName, job.siteName]
-        .join(" ")
-        .toLowerCase()
-        .includes(needle),
-    );
-  }, [deferredJobSearch, jobs]);
-
-  const selectedJob = jobs.find((job) => job.id === form.jobId);
   const paidHours =
     form.entryType === "work"
-      ? calculatePaidHours(form.startTime, form.finishTime)
+      ? calculateDayPaidHours(
+          form.workEntries
+            .filter((entry) => entry.jobId)
+            .map((entry) => ({
+              startTime: entry.startTime,
+              finishTime: entry.finishTime,
+            })),
+        )
       : Number(form.leaveHours || 0);
+
+  const totalWorkedHours = useMemo(
+    () =>
+      form.workEntries.reduce((sum, entry) => {
+        const start = Number(entry.startTime.slice(0, 2)) * 60 + Number(entry.startTime.slice(3));
+        const finish = Number(entry.finishTime.slice(0, 2)) * 60 + Number(entry.finishTime.slice(3));
+        return finish > start ? sum + (finish - start) / 60 : sum;
+      }, 0),
+    [form.workEntries],
+  );
 
   useEffect(() => {
     function handleOnline() {
@@ -260,7 +304,7 @@ export function MobileTimesheetApp({
       setIsOnline(false);
       setStatus({
         tone: "warning",
-        message: "You are offline. New entries will queue on this device and sync once you reconnect.",
+        message: "You are offline. New day sheets will queue on this device and sync once you reconnect.",
       });
     }
 
@@ -277,13 +321,20 @@ export function MobileTimesheetApp({
   useEffect(() => {
     startTransition(() => {
       setForm((current) => {
-        if (current.entryType !== "work" || current.jobId || jobs.length === 0) {
+        if (current.entryType !== "work") {
           return current;
         }
 
         return {
           ...current,
-          jobId: jobs[0].id,
+          workEntries: current.workEntries.map((entry) =>
+            entry.jobId || jobs.length === 0
+              ? entry
+              : {
+                  ...entry,
+                  jobId: jobs[0].id,
+                },
+          ),
         };
       });
     });
@@ -311,6 +362,48 @@ export function MobileTimesheetApp({
       ...current,
       [key]: value,
     }));
+  }
+
+  function updateWorkEntry(
+    entryId: string,
+    key: keyof WorkEntryFormState,
+    value: WorkEntryFormState[keyof WorkEntryFormState],
+  ) {
+    setForm((current) => ({
+      ...current,
+      workEntries: current.workEntries.map((entry) =>
+        entry.id === entryId ? { ...entry, [key]: value } : entry,
+      ),
+    }));
+  }
+
+  function addWorkEntry() {
+    setForm((current) => ({
+      ...current,
+      workEntries: [
+        ...current.workEntries,
+        {
+          ...createEmptyWorkEntry(),
+          jobId: jobs[0]?.id ?? "",
+        },
+      ],
+    }));
+  }
+
+  function removeWorkEntry(entryId: string) {
+    setForm((current) => {
+      if (current.workEntries.length === 1) {
+        return {
+          ...current,
+          workEntries: [createEmptyWorkEntry()],
+        };
+      }
+
+      return {
+        ...current,
+        workEntries: current.workEntries.filter((entry) => entry.id !== entryId),
+      };
+    });
   }
 
   function applyAuthenticatedEmployee(employee: EmployeeOption) {
@@ -385,7 +478,7 @@ export function MobileTimesheetApp({
     const nextQueue = [
       ...queue,
       {
-        id: crypto.randomUUID(),
+        id: createId(),
         payload,
         queuedAt: new Date().toISOString(),
       },
@@ -406,10 +499,10 @@ export function MobileTimesheetApp({
       return;
     }
 
-    if (payload.entryType === "work" && !payload.jobId) {
+    if (payload.entryType === "work" && payload.workEntries.length === 0) {
       setStatus({
         tone: "error",
-        message: "Choose a job before submitting a worked shift.",
+        message: "Add at least one completed row before submitting this day sheet.",
       });
       return;
     }
@@ -417,7 +510,7 @@ export function MobileTimesheetApp({
     if (payload.paidHours <= 0) {
       setStatus({
         tone: "error",
-        message: "Shift length must still leave paid time after the mandatory 30 minute lunch break.",
+        message: "The total day must still leave paid time after the mandatory 30 minute lunch break.",
       });
       return;
     }
@@ -429,13 +522,13 @@ export function MobileTimesheetApp({
         queueSubmission(payload);
         setStatus({
           tone: "warning",
-          message: "No signal right now, so the entry has been queued on this phone for later sync.",
+          message: "No signal right now, so this day sheet has been queued on this phone for later sync.",
         });
       } else {
         await postTimesheet(payload);
         setStatus({
           tone: "success",
-          message: "Timesheet submitted and synced to Postgres.",
+          message: "Day sheet submitted and synced to Postgres.",
         });
       }
 
@@ -443,7 +536,6 @@ export function MobileTimesheetApp({
         ...createInitialFormForEmployee(activeEmployee),
         workDate: current.workDate,
       }));
-      setJobSearch("");
       void flushPendingQueueRequest(setPendingCount, setStatus);
     } catch (error) {
       queueSubmission(payload);
@@ -451,8 +543,8 @@ export function MobileTimesheetApp({
         tone: "warning",
         message:
           error instanceof Error
-            ? `${error.message} The entry has been safely queued and will retry automatically.`
-            : "The entry has been safely queued and will retry automatically.",
+            ? `${error.message} The day sheet has been safely queued and will retry automatically.`
+            : "The day sheet has been safely queued and will retry automatically.",
       });
     } finally {
       setIsSubmitting(false);
@@ -536,159 +628,209 @@ export function MobileTimesheetApp({
 
             <section className={styles.block}>
               <div className={styles.sectionHeading}>
-                <h2>Entry details</h2>
-                <p>Choose worked time or a leave type, then complete only the fields that matter.</p>
+                <h2>Day sheet</h2>
+                <p>Enter one full day at a time with as many job rows as needed. Time options are fixed to 15 minutes.</p>
               </div>
-              <label className={styles.field}>
-                <span>Date worked</span>
-                <input
-                  type="date"
-                  value={form.workDate}
-                  onChange={(event) => updateField("workDate", event.target.value)}
-                />
-              </label>
 
-              <div className={styles.choiceRow}>
-                {(Object.keys(entryTypeLabels) as EntryType[]).map((entryType) => (
-                  <button
-                    key={entryType}
-                    className={form.entryType === entryType ? styles.choiceActive : styles.choice}
-                    type="button"
-                    onClick={() => updateField("entryType", entryType)}
-                  >
-                    {entryTypeLabels[entryType]}
-                  </button>
-                ))}
+              <div className={styles.sheetHeader}>
+                <label className={styles.field}>
+                  <span>Date</span>
+                  <input
+                    type="date"
+                    value={form.workDate}
+                    onChange={(event) => updateField("workDate", event.target.value)}
+                  />
+                </label>
+                <div className={styles.modeStack}>
+                  <span className={styles.microLabel}>Day type</span>
+                  <div className={styles.choiceRow}>
+                    {(Object.keys(entryTypeLabels) as EntryType[]).map((entryType) => (
+                      <button
+                        key={entryType}
+                        className={form.entryType === entryType ? styles.choiceActive : styles.choice}
+                        type="button"
+                        onClick={() => updateField("entryType", entryType)}
+                      >
+                        {entryTypeLabels[entryType]}
+                      </button>
+                    ))}
+                  </div>
+                </div>
               </div>
             </section>
 
             {form.entryType === "work" ? (
-              <>
-                <section className={styles.block}>
-                  <div className={styles.sectionHeading}>
-                    <h2>Job selection</h2>
-                    <p>Projects come from Postgres and auto-fill client and site details.</p>
-                  </div>
-                  <label className={styles.field}>
-                    <span>Find job</span>
-                    <input
-                      placeholder="Search by job code, project, client or site"
-                      value={jobSearch}
-                      onChange={(event: ChangeEvent<HTMLInputElement>) =>
-                        setJobSearch(event.target.value)
-                      }
-                    />
-                  </label>
+              <section className={styles.block}>
+                <div className={styles.sectionHeading}>
+                  <h2>Time rows</h2>
+                  <p>Each row matches one line from the field sheet. Add another row when the job changes during the day.</p>
+                </div>
 
-                  <div className={styles.jobList}>
-                    {filteredJobs.map((job) => (
-                      <button
-                        key={job.id}
-                        type="button"
-                        className={form.jobId === job.id ? styles.jobCardActive : styles.jobCard}
-                        onClick={() => updateField("jobId", job.id)}
-                      >
-                        <strong>
-                          {job.code} - {job.name}
-                        </strong>
-                        <span>{job.clientName}</span>
-                        <span>{job.siteName}</span>
-                      </button>
-                    ))}
+                <div className={styles.summaryStrip}>
+                  <div>
+                    <span>Rows</span>
+                    <strong>{form.workEntries.length}</strong>
                   </div>
-                </section>
+                  <div>
+                    <span>Worked</span>
+                    <strong>{formatHours(totalWorkedHours)}h</strong>
+                  </div>
+                  <div>
+                    <span>Lunch</span>
+                    <strong>{formatHours(MANDATORY_LUNCH_BREAK_HOURS)}h</strong>
+                  </div>
+                  <div>
+                    <span>Paid</span>
+                    <strong>{formatHours(paidHours)}h</strong>
+                  </div>
+                </div>
 
-                <section className={styles.block}>
-                  <div className={styles.sectionHeading}>
-                    <h2>Shift timing</h2>
-                    <p>The unpaid 30 minute lunch deduction is always applied.</p>
-                  </div>
+                <div className={styles.entryList}>
+                  {form.workEntries.map((entry, index) => {
+                    const selectedJob = jobs.find((job) => job.id === entry.jobId);
 
-                  <div className={styles.timeGrid}>
-                    <label className={styles.field}>
-                      <span>Start</span>
-                      <input
-                        type="time"
-                        value={form.startTime}
-                        onChange={(event) => updateField("startTime", event.target.value)}
-                      />
-                    </label>
-                    <label className={styles.field}>
-                      <span>Finish</span>
-                      <input
-                        type="time"
-                        value={form.finishTime}
-                        onChange={(event) => updateField("finishTime", event.target.value)}
-                      />
-                    </label>
-                  </div>
+                    return (
+                      <article className={styles.entryCard} key={entry.id}>
+                        <div className={styles.entryCardHeader}>
+                          <div>
+                            <p className={styles.entryIndex}>Entry {index + 1}</p>
+                            <strong>{selectedJob ? `${selectedJob.code} - ${selectedJob.clientName}` : "Choose a job"}</strong>
+                          </div>
+                          <button
+                            className={styles.slimButton}
+                            type="button"
+                            onClick={() => removeWorkEntry(entry.id)}
+                          >
+                            Remove
+                          </button>
+                        </div>
 
-                  <div className={styles.summaryStrip}>
-                    <div>
-                      <span>Client</span>
-                      <strong>{selectedJob?.clientName ?? "Select a job"}</strong>
-                    </div>
-                    <div>
-                      <span>Site</span>
-                      <strong>{selectedJob?.siteName ?? "Select a job"}</strong>
-                    </div>
-                    <div>
-                      <span>Paid hours</span>
-                      <strong>{paidHours.toFixed(1)} hrs</strong>
-                    </div>
-                  </div>
-                </section>
-              </>
+                        <label className={styles.field}>
+                          <span>Job</span>
+                          <select
+                            value={entry.jobId}
+                            onChange={(event) => updateWorkEntry(entry.id, "jobId", event.target.value)}
+                          >
+                            <option value="">Select job</option>
+                            {jobs.map((job) => (
+                              <option key={job.id} value={job.id}>
+                                {job.code} - {job.clientName} - {job.siteName}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+
+                        {selectedJob ? (
+                          <div className={styles.jobMeta}>
+                            <div>
+                              <span>Client</span>
+                              <strong>{selectedJob.clientName}</strong>
+                            </div>
+                            <div>
+                              <span>Site</span>
+                              <strong>{selectedJob.siteName}</strong>
+                            </div>
+                          </div>
+                        ) : null}
+
+                        <div className={styles.timeGrid}>
+                          <label className={styles.field}>
+                            <span>Start</span>
+                            <select
+                              value={entry.startTime}
+                              onChange={(event) => updateWorkEntry(entry.id, "startTime", event.target.value)}
+                            >
+                              {timeOptions.map((option) => (
+                                <option key={option} value={option}>
+                                  {option}
+                                </option>
+                              ))}
+                            </select>
+                          </label>
+                          <label className={styles.field}>
+                            <span>End</span>
+                            <select
+                              value={entry.finishTime}
+                              onChange={(event) => updateWorkEntry(entry.id, "finishTime", event.target.value)}
+                            >
+                              {timeOptions.map((option) => (
+                                <option key={option} value={option}>
+                                  {option}
+                                </option>
+                              ))}
+                            </select>
+                          </label>
+                        </div>
+
+                        <label className={styles.field}>
+                          <span>Job description / working with</span>
+                          <textarea
+                            placeholder="Travel, assist JP, washdrill install, meeting, crew notes"
+                            value={entry.notes}
+                            onChange={(event) => updateWorkEntry(entry.id, "notes", event.target.value)}
+                          />
+                        </label>
+                      </article>
+                    );
+                  })}
+                </div>
+
+                <button className={styles.secondaryButton} type="button" onClick={addWorkEntry}>
+                  Add another time row
+                </button>
+              </section>
             ) : (
               <section className={styles.block}>
                 <div className={styles.sectionHeading}>
                   <h2>Leave details</h2>
-                  <p>Leave is recorded in paid or unpaid hours without a job requirement.</p>
+                  <p>Choose the leave type above, then record the hours for this day.</p>
                 </div>
+
+                <div className={styles.quickHours}>
+                  {leaveHourOptions.map((hours) => (
+                    <button
+                      key={hours}
+                      className={form.leaveHours === hours ? styles.choiceActive : styles.choice}
+                      type="button"
+                      onClick={() => updateField("leaveHours", hours)}
+                    >
+                      {hours}h
+                    </button>
+                  ))}
+                </div>
+
                 <label className={styles.field}>
                   <span>Leave hours</span>
                   <input
                     type="number"
-                    min="0.5"
-                    max="24"
-                    step="0.5"
+                    min="0.25"
+                    step="0.25"
                     value={form.leaveHours}
                     onChange={(event) => updateField("leaveHours", event.target.value)}
                   />
                 </label>
-                <div className={styles.quickHours}>
-                  {["4", "8", "10", "12"].map((hours) => (
-                    <button
-                      key={hours}
-                      type="button"
-                      className={form.leaveHours === hours ? styles.choiceActive : styles.choice}
-                      onClick={() => updateField("leaveHours", hours)}
-                    >
-                      {hours} hrs
-                    </button>
-                  ))}
-                </div>
               </section>
             )}
 
             <section className={styles.block}>
               <div className={styles.sectionHeading}>
-                <h2>Allowances and notes</h2>
-                <p>Overnight allowance is available when the crew is working away from home.</p>
+                <h2>Extras</h2>
+                <p>Use overnight allowance when the crew is working away from home.</p>
               </div>
+
               <label className={styles.toggle}>
                 <input
                   type="checkbox"
                   checked={form.overnightAllowance}
                   onChange={(event) => updateField("overnightAllowance", event.target.checked)}
                 />
-                <span>Overnight allowance applies</span>
+                <span>Overnight allowance applies for this day</span>
               </label>
+
               <label className={styles.field}>
-                <span>Notes</span>
+                <span>Day notes</span>
                 <textarea
-                  rows={4}
-                  placeholder="Optional notes for supervisor review"
+                  placeholder="Optional note for the whole day"
                   value={form.notes}
                   onChange={(event) => updateField("notes", event.target.value)}
                 />
@@ -697,16 +839,11 @@ export function MobileTimesheetApp({
 
             <footer className={styles.submitBar}>
               <div>
-                <span>Ready to send</span>
-                <strong>{paidHours.toFixed(1)} hrs</strong>
+                <span>Paid total</span>
+                <strong>{formatHours(paidHours)}h</strong>
               </div>
-              <button
-                className={styles.primaryButton}
-                type="button"
-                onClick={handleSubmit}
-                disabled={isSubmitting}
-              >
-                {isSubmitting ? "Submitting..." : "Submit timesheet"}
+              <button className={styles.primaryButton} type="button" onClick={handleSubmit} disabled={isSubmitting}>
+                {isSubmitting ? "Submitting..." : "Submit day sheet"}
               </button>
             </footer>
           </>

@@ -81,6 +81,10 @@ After deployment variables are set, you can verify the connection in two ways:
 If `DATABASE_URL` is missing, `/api/health/db` returns `503`.
 If the credentials or network are wrong, `/api/health/db` returns `500` with the connection error.
 
+Container liveness is available separately at:
+
+- `/api/health/live` for a lightweight app-process health response
+
 ## Coolify Dockerfile deployment
 
 This repo now supports Dockerfile-based deployment in Coolify.
@@ -90,6 +94,10 @@ Recommended Coolify settings:
 - Build Pack: `Dockerfile`
 - Port: `3000`
 - Dockerfile location: `./Dockerfile`
+
+The Docker image now includes a container `HEALTHCHECK` that probes:
+
+- `http://127.0.0.1:3000/api/health/live`
 
 The container expects runtime environment variables from Coolify, especially:
 
