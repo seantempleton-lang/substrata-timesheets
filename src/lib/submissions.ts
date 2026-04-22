@@ -79,6 +79,10 @@ export async function createTimesheetEntry(input: TimesheetPayload) {
         do update set
           status = excluded.status,
           submitted_at = excluded.submitted_at,
+          supervisor_approved_by = null,
+          supervisor_approved_at = null,
+          manager_approved_by = null,
+          manager_approved_at = null,
           notes = coalesce(excluded.notes, timesheets.notes),
           updated_at = now()
         returning id::text, status
