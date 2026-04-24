@@ -1,9 +1,45 @@
 import { getDb } from "@/lib/db";
 import {
+  addDaysToDateString,
   allocatePaidHoursAcrossEntries,
+  APP_TIME_ZONE,
+  getTodayInTimeZone,
+  getWeekStartMonday,
   timesheetPayloadSchema,
 } from "@/lib/timesheets";
-import type { TimesheetPayload } from "@/lib/types";
+import type {
+  EntryType,
+  TimesheetHistoryDay,
+  TimesheetHistoryPeriod,
+  TimesheetPayload,
+} from "@/lib/types";
+
+type TimesheetLookupRow = {
+  existing_day_id: string | null;
+};
+
+type TimesheetHistoryRow = {
+  week_start: string;
+  week_end: string;
+  timesheet_status: string | null;
+  submitted_at: string | null;
+  total_hours: string | null;
+  total_overnights: number | null;
+  work_date: string;
+  day_type: "work" | "leave";
+  leave_type: "annual" | "sick" | "unpaid" | null;
+  overnight: boolean;
+  day_notes: string | null;
+  entry_hours: string | null;
+  rate_type: string | null;
+  entry_notes: string | null;
+  start_time: string | null;
+  end_time: string | null;
+  job_code: string | null;
+  job_name: string | null;
+  client_name: string | null;
+  site_name: string | null;
+};
 
 function getLeaveType(entryType: TimesheetPayload["entryType"]) {
   switch (entryType) {
@@ -94,6 +130,17 @@ export async function createTimesheetEntry(input: TimesheetPayload) {
         payload.submittedAt ?? new Date().toISOString(),
         payload.notes ?? null,
       ],
+    );
+
+    const [existingDay] = await transaction.unsafe<TimesheetLookupRow[]>(
+      `
+        select id::text as existing_day_id
+        from timesheet_days
+        where timesheet_id = $1::uuid
+          and work_date = $2::date
+        limit 1
+      `,
+      [timesheet.id, payload.workDate],
     );
 
     const [timesheetDay] = await transaction.unsafe<Array<{ id: string }>>(
@@ -237,10 +284,146 @@ export async function createTimesheetEntry(input: TimesheetPayload) {
     return {
       id: timesheet.id,
       status: timesheet.status,
+      action: existingDay?.existing_day_id ? "updated" : "created",
       userId: user.id,
       userName: user.full_name,
       workDate: payload.workDate,
+      clientSubmissionId: payload.clientSubmissionId ?? null,
       entryCount: payload.entryType === "work" ? payload.workEntries.length : 1,
     };
   });
+}
+
+function mapLeaveTypeToEntryType(value: TimesheetHistoryRow["leave_type"]): EntryType {
+  switch (value) {
+    case "annual":
+      return "annual_leave";
+    case "sick":
+      return "sick_leave";
+    case "unpaid":
+      return "unpaid_leave";
+    default:
+      return "work";
+  }
+}
+
+export async function getTimesheetHistoryForEmployee(userId: string): Promise<TimesheetHistoryPeriod[]> {
+  const db = getDb();
+  const today = getTodayInTimeZone(APP_TIME_ZONE);
+  const currentWeekStart = getWeekStartMonday(today);
+  const previousWeekStart = addDaysToDateString(currentWeekStart, -7);
+  const weekStarts = [currentWeekStart, previousWeekStart];
+  const periodKeys = new Map<string, "current" | "previous">([
+    [currentWeekStart, "current"],
+    [previousWeekStart, "previous"],
+  ]);
+
+  const rows = await db.unsafe<TimesheetHistoryRow[]>(
+    `
+      select
+        t.week_start::date::text as week_start,
+        (t.week_start + interval '6 day')::date::text as week_end,
+        t.status::text as timesheet_status,
+        t.submitted_at::timestamptz::text as submitted_at,
+        t.total_hours::text as total_hours,
+        t.total_overnights as total_overnights,
+        td.work_date::date::text as work_date,
+        td.day_type::text as day_type,
+        td.leave_type::text as leave_type,
+        td.overnight as overnight,
+        td.notes::text as day_notes,
+        te.hours::text as entry_hours,
+        te.rate_type::text as rate_type,
+        te.notes::text as entry_notes,
+        te.start_time::text as start_time,
+        te.end_time::text as end_time,
+        j.job_number::text as job_code,
+        j.title::text as job_name,
+        c.name::text as client_name,
+        coalesce(j.site_name::text, j.site_address::text, 'Unknown site') as site_name
+      from timesheets t
+      join timesheet_days td on td.timesheet_id = t.id
+      left join timesheet_entries te on te.timesheet_day_id = td.id
+      left join jobs j on j.id = te.job_id
+      left join clients c on c.id = j.client_id
+      where t.user_id = $1::uuid
+        and t.week_start = any($2::date[])
+      order by
+        t.week_start desc,
+        td.work_date desc,
+        te.start_time asc nulls last,
+        te.created_at asc nulls last
+    `,
+    [userId, weekStarts],
+  );
+
+  const periods = new Map<string, TimesheetHistoryPeriod>();
+
+  for (const weekStart of weekStarts) {
+    periods.set(weekStart, {
+      key: periodKeys.get(weekStart) ?? "previous",
+      weekStart,
+      weekEnd: addDaysToDateString(weekStart, 6),
+      totalHours: 0,
+      totalOvernights: 0,
+      days: [],
+    });
+  }
+
+  for (const row of rows) {
+    const period = periods.get(row.week_start);
+
+    if (!period) {
+      continue;
+    }
+
+    period.status ??= row.timesheet_status ?? undefined;
+    period.submittedAt ??= row.submitted_at ?? undefined;
+    period.totalHours = Number(row.total_hours ?? "0");
+    period.totalOvernights = row.total_overnights ?? 0;
+    period.weekEnd = row.week_end;
+
+    let day = period.days.find((item) => item.workDate === row.work_date);
+
+    if (!day) {
+      day = {
+        workDate: row.work_date,
+        entryType: row.day_type === "work" ? "work" : mapLeaveTypeToEntryType(row.leave_type),
+        overnightAllowance: row.overnight,
+        notes: row.day_notes ?? undefined,
+        paidHours: 0,
+        leaveHours: undefined,
+        entries: [],
+      };
+      period.days.push(day);
+    }
+
+    if (row.entry_hours) {
+      const entryHours = Number(row.entry_hours);
+
+      day.entries.push({
+        jobCode: row.job_code ?? undefined,
+        jobName: row.job_name ?? undefined,
+        clientName: row.client_name ?? undefined,
+        siteName: row.site_name ?? undefined,
+        startTime: row.start_time ?? undefined,
+        finishTime: row.end_time ?? undefined,
+        hours: entryHours,
+        rateType: row.rate_type ?? undefined,
+        notes: row.entry_notes ?? undefined,
+      });
+
+      day.paidHours += entryHours;
+
+      if (day.entryType !== "work") {
+        day.leaveHours = (day.leaveHours ?? 0) + entryHours;
+      }
+    }
+  }
+
+  for (const period of periods.values()) {
+    period.days.sort((left, right) => left.workDate.localeCompare(right.workDate));
+  }
+
+  return weekStarts.map((weekStart) => periods.get(weekStart)!);
 }

@@ -10,6 +10,7 @@ import type {
 
 export const MANDATORY_LUNCH_BREAK_HOURS = 0.5;
 export const TIME_STEP_MINUTES = 15;
+export const APP_TIME_ZONE = "Pacific/Auckland";
 
 const DAY_MINUTES = 24 * 60;
 
@@ -110,6 +111,36 @@ export function buildTimeOptions(): string[] {
   });
 }
 
+function getDateFormatter(timeZone: string) {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  });
+}
+
+export function getTodayInTimeZone(timeZone = APP_TIME_ZONE): string {
+  return getDateFormatter(timeZone).format(new Date());
+}
+
+export function addDaysToDateString(value: string, days: number): string {
+  const date = new Date(`${value}T00:00:00Z`);
+  date.setUTCDate(date.getUTCDate() + days);
+  return date.toISOString().slice(0, 10);
+}
+
+export function getWeekStartMonday(value: string): string {
+  const date = new Date(`${value}T00:00:00Z`);
+  const offset = (date.getUTCDay() + 6) % 7;
+  date.setUTCDate(date.getUTCDate() - offset);
+  return date.toISOString().slice(0, 10);
+}
+
+export function getWeekEndSunday(value: string): string {
+  return addDaysToDateString(getWeekStartMonday(value), 6);
+}
+
 export function calculateWorkedMinutes(startTime: string, finishTime: string): number {
   const start = parseTimeToMinutes(startTime);
   const finish = parseTimeToMinutes(finishTime);
@@ -200,6 +231,7 @@ export const timesheetPayloadSchema = z
     userId: z.string().uuid().optional(),
     employeeCode: z.string().trim().max(50).optional(),
     workDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Work date is required."),
+    clientSubmissionId: z.string().trim().max(100).optional(),
     entryType: z.enum(["work", "annual_leave", "sick_leave", "unpaid_leave"]),
     workEntries: z.array(workEntrySchema).default([]),
     leaveHours: z.number().min(0.25).max(24).optional(),
@@ -307,5 +339,5 @@ export function getDefaultBootstrap(): AppBootstrap {
 }
 
 export function formatToday(): string {
-  return new Date().toISOString().slice(0, 10);
+  return getTodayInTimeZone();
 }

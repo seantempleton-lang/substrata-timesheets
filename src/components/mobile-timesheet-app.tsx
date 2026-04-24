@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { startTransition, useEffect, useMemo, useState } from "react";
 
@@ -9,6 +9,7 @@ import {
   entryTypeLabels,
   formatHours,
   formatToday,
+  getWeekEndSunday,
   MANDATORY_LUNCH_BREAK_HOURS,
 } from "@/lib/timesheets";
 import type {
@@ -16,6 +17,7 @@ import type {
   EmployeeOption,
   EntryType,
   JobOption,
+  TimesheetHistoryPeriod,
   TimesheetPayload,
   TimesheetWorkEntryPayload,
 } from "@/lib/types";
@@ -26,6 +28,7 @@ type SubmissionState = {
 };
 
 type FlushQueueResult = {
+  attemptedCount: number;
   syncedCount: number;
   remainingCount: number;
 };
@@ -61,9 +64,42 @@ type FormState = {
   notes: string;
 };
 
+type SyncActivityState = {
+  lastAttemptAt: string | null;
+  lastSuccessAt: string | null;
+  lastSyncedCount: number;
+  lastRemainingCount: number;
+};
+
+type HistoryState = {
+  loading: boolean;
+  error: string | null;
+  periods: TimesheetHistoryPeriod[];
+};
+
+type TimesheetPostResponse = {
+  ok?: boolean;
+  record?: {
+    action?: "created" | "updated";
+    clientSubmissionId?: string | null;
+  };
+  error?: string;
+};
+
 const queueStorageKey = "substrata.mobile.pending-timesheets.v1";
 const timeOptions = buildTimeOptions();
 const leaveHourOptions = ["4", "8", "10", "12"];
+const shortDateFormatter = new Intl.DateTimeFormat("en-NZ", {
+  weekday: "short",
+  day: "numeric",
+  month: "short",
+});
+const dateTimeFormatter = new Intl.DateTimeFormat("en-NZ", {
+  day: "numeric",
+  month: "short",
+  hour: "numeric",
+  minute: "2-digit",
+});
 
 function createId() {
   return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
@@ -108,7 +144,7 @@ function createInitialFormForEmployee(employee: EmployeeOption | null): FormStat
   };
 }
 
-function buildPayload(form: FormState, jobs: JobOption[]): TimesheetPayload {
+function buildPayload(form: FormState, jobs: JobOption[], clientSubmissionId: string): TimesheetPayload {
   const workEntries: TimesheetWorkEntryPayload[] =
     form.entryType === "work"
       ? form.workEntries
@@ -137,6 +173,7 @@ function buildPayload(form: FormState, jobs: JobOption[]): TimesheetPayload {
     employeeName: form.employeeName.trim(),
     employeeCode: form.employeeCode.trim() || undefined,
     workDate: form.workDate,
+    clientSubmissionId,
     entryType: form.entryType,
     workEntries,
     leaveHours: form.entryType === "work" ? undefined : Number(form.leaveHours),
@@ -166,8 +203,32 @@ function writeQueue(queue: PendingSubmission[]) {
   window.localStorage.setItem(queueStorageKey, JSON.stringify(queue));
 }
 
-function syncPendingCount(setPendingCount: (count: number) => void) {
-  setPendingCount(readQueue().length);
+function syncPendingQueue(setPendingQueue: (queue: PendingSubmission[]) => void) {
+  setPendingQueue(readQueue());
+}
+
+function formatDisplayDate(value: string) {
+  return shortDateFormatter.format(new Date(`${value}T12:00:00`));
+}
+
+function formatDisplayDateTime(value: string | null) {
+  if (!value) {
+    return "Not yet";
+  }
+
+  return dateTimeFormatter.format(new Date(value));
+}
+
+function describePendingSubmission(item: PendingSubmission) {
+  if (item.payload.entryType === "work") {
+    const jobs = Array.from(
+      new Set(item.payload.workEntries.map((entry) => entry.jobCode ?? entry.jobName ?? "Job row")),
+    );
+
+    return `${jobs.join(", ")}${jobs.length > 0 ? " " : ""}(${item.payload.workEntries.length} row${item.payload.workEntries.length === 1 ? "" : "s"})`;
+  }
+
+  return `${entryTypeLabels[item.payload.entryType]} (${formatHours(item.payload.leaveHours ?? item.payload.paidHours)}h)`;
 }
 
 async function postTimesheet(payload: TimesheetPayload) {
@@ -179,12 +240,26 @@ async function postTimesheet(payload: TimesheetPayload) {
     body: JSON.stringify(payload),
   });
 
+  const body = (await response.json().catch(() => null)) as TimesheetPostResponse | null;
+
   if (!response.ok) {
-    const body = (await response.json().catch(() => null)) as { error?: string } | null;
     throw new Error(body?.error ?? "Unable to save this timesheet entry.");
   }
 
-  return response.json();
+  return body;
+}
+
+async function fetchTimesheetHistory() {
+  const response = await fetch("/api/timesheets", { cache: "no-store" });
+  const body = (await response.json().catch(() => null)) as
+    | { periods?: TimesheetHistoryPeriod[]; error?: string }
+    | null;
+
+  if (!response.ok) {
+    throw new Error(body?.error ?? "Unable to load your recent timesheets.");
+  }
+
+  return body?.periods ?? [];
 }
 
 async function postLogin(credentials: LoginState) {
@@ -218,22 +293,23 @@ async function postLogout() {
 }
 
 async function flushPendingQueueRequest(
-  setPendingCount: (count: number) => void,
-  setStatus: (state: SubmissionState) => void,
-) : Promise<FlushQueueResult> {
+  setPendingQueue: (queue: PendingSubmission[]) => void,
+): Promise<FlushQueueResult> {
+  const queue = readQueue();
+
   if (typeof window === "undefined" || !navigator.onLine) {
-    syncPendingCount(setPendingCount);
+    syncPendingQueue(setPendingQueue);
     return {
+      attemptedCount: queue.length,
       syncedCount: 0,
-      remainingCount: readQueue().length,
+      remainingCount: queue.length,
     };
   }
 
-  const queue = readQueue();
-
   if (queue.length === 0) {
-    setPendingCount(0);
+    setPendingQueue([]);
     return {
+      attemptedCount: 0,
       syncedCount: 0,
       remainingCount: 0,
     };
@@ -250,16 +326,10 @@ async function flushPendingQueueRequest(
   }
 
   writeQueue(remaining);
-  setPendingCount(remaining.length);
-
-  if (remaining.length === 0) {
-    setStatus({
-      tone: "success",
-      message: "Pending offline day sheets were synced to Postgres.",
-    });
-  }
+  setPendingQueue(remaining);
 
   return {
+    attemptedCount: queue.length,
     syncedCount: queue.length - remaining.length,
     remainingCount: remaining.length,
   };
@@ -279,8 +349,8 @@ export function MobileTimesheetApp({
     email: initialEmployee?.email ?? "",
     password: "",
   });
-  const [pendingCount, setPendingCount] = useState(() =>
-    typeof window === "undefined" ? 0 : readQueue().length,
+  const [pendingQueue, setPendingQueue] = useState<PendingSubmission[]>(() =>
+    typeof window === "undefined" ? [] : readQueue(),
   );
   const [isOnline, setIsOnline] = useState(() =>
     typeof navigator === "undefined" ? true : navigator.onLine,
@@ -289,11 +359,23 @@ export function MobileTimesheetApp({
   const [isSigningIn, setIsSigningIn] = useState(false);
   const [isLoggingOut, setIsLoggingOut] = useState(false);
   const [isSyncingQueue, setIsSyncingQueue] = useState(false);
+  const [syncActivity, setSyncActivity] = useState<SyncActivityState>({
+    lastAttemptAt: null,
+    lastSuccessAt: null,
+    lastSyncedCount: 0,
+    lastRemainingCount: pendingQueue.length,
+  });
+  const [history, setHistory] = useState<HistoryState>({
+    loading: Boolean(initialEmployee),
+    error: null,
+    periods: [],
+  });
   const [status, setStatus] = useState<SubmissionState>({
     tone: bootstrap.databaseReady ? "idle" : "warning",
     message: bootstrap.message,
   });
 
+  const pendingCount = pendingQueue.length;
   const paidHours =
     form.entryType === "work"
       ? calculateDayPaidHours(
@@ -316,15 +398,137 @@ export function MobileTimesheetApp({
     [form.workEntries],
   );
 
+  async function loadHistory() {
+    if (!activeEmployee) {
+      setHistory({
+        loading: false,
+        error: null,
+        periods: [],
+      });
+      return;
+    }
+
+    setHistory((current) => ({
+      ...current,
+      loading: true,
+      error: null,
+    }));
+
+    try {
+      const periods = await fetchTimesheetHistory();
+      setHistory({
+        loading: false,
+        error: null,
+        periods,
+      });
+    } catch (error) {
+      setHistory({
+        loading: false,
+        error: error instanceof Error ? error.message : "Unable to load recent timesheets.",
+        periods: [],
+      });
+    }
+  }
+
+  async function syncQueuedSubmissions(options: { manual: boolean }) {
+    syncPendingQueue(setPendingQueue);
+    const queuedCount = readQueue().length;
+    const attemptedAt = new Date().toISOString();
+
+    if (!activeEmployee) {
+      setSyncActivity((current) => ({
+        ...current,
+        lastAttemptAt: attemptedAt,
+        lastRemainingCount: queuedCount,
+      }));
+
+      if (options.manual && queuedCount > 0) {
+        setStatus({
+          tone: "warning",
+          message: "Log back in on this device before pending day sheets can sync.",
+        });
+      }
+
+      return;
+    }
+
+    if (!navigator.onLine) {
+      setSyncActivity((current) => ({
+        ...current,
+        lastAttemptAt: attemptedAt,
+        lastRemainingCount: queuedCount,
+      }));
+
+      if (options.manual) {
+        setStatus({
+          tone: "warning",
+          message: "Still offline. Pending day sheets will sync automatically once this device reconnects.",
+        });
+      }
+
+      return;
+    }
+
+    if (queuedCount === 0) {
+      setSyncActivity((current) => ({
+        ...current,
+        lastAttemptAt: attemptedAt,
+        lastSyncedCount: 0,
+        lastRemainingCount: 0,
+      }));
+
+      if (options.manual) {
+        setStatus({
+          tone: "success",
+          message: "No pending day sheets to sync.",
+        });
+      }
+
+      return;
+    }
+
+    setIsSyncingQueue(true);
+
+    try {
+      const result = await flushPendingQueueRequest(setPendingQueue);
+
+      setSyncActivity((current) => ({
+        ...current,
+        lastAttemptAt: attemptedAt,
+        lastSuccessAt: result.syncedCount > 0 ? new Date().toISOString() : current.lastSuccessAt,
+        lastSyncedCount: result.syncedCount,
+        lastRemainingCount: result.remainingCount,
+      }));
+
+      if (result.remainingCount > 0) {
+        setStatus({
+          tone: "warning",
+          message: `${result.syncedCount} synced, ${result.remainingCount} still pending. We'll keep retrying automatically when this device is online.`,
+        });
+      } else if (result.syncedCount > 0) {
+        setStatus({
+          tone: "success",
+          message: `${result.syncedCount} pending day sheet${result.syncedCount === 1 ? "" : "s"} synced to Postgres.`,
+        });
+      }
+
+      if (result.syncedCount > 0) {
+        await loadHistory();
+      }
+    } finally {
+      setIsSyncingQueue(false);
+    }
+  }
+
   useEffect(() => {
     function handleOnline() {
       setIsOnline(true);
-      void flushPendingQueueRequest(setPendingCount, setStatus);
+      void syncQueuedSubmissions({ manual: false });
     }
 
     function handleOffline() {
       setIsOnline(false);
-      syncPendingCount(setPendingCount);
+      syncPendingQueue(setPendingQueue);
       setStatus({
         tone: "warning",
         message: "You are offline. New day sheets will queue on this device and sync once you reconnect.",
@@ -333,13 +537,13 @@ export function MobileTimesheetApp({
 
     function handleStorage(event: StorageEvent) {
       if (event.key === null || event.key === queueStorageKey) {
-        syncPendingCount(setPendingCount);
+        syncPendingQueue(setPendingQueue);
       }
     }
 
     function handleVisibilityChange() {
       if (document.visibilityState === "visible") {
-        syncPendingCount(setPendingCount);
+        syncPendingQueue(setPendingQueue);
       }
     }
 
@@ -347,8 +551,8 @@ export function MobileTimesheetApp({
     window.addEventListener("offline", handleOffline);
     window.addEventListener("storage", handleStorage);
     document.addEventListener("visibilitychange", handleVisibilityChange);
-    syncPendingCount(setPendingCount);
-    void flushPendingQueueRequest(setPendingCount, setStatus);
+    syncPendingQueue(setPendingQueue);
+    void syncQueuedSubmissions({ manual: false });
 
     return () => {
       window.removeEventListener("online", handleOnline);
@@ -356,7 +560,11 @@ export function MobileTimesheetApp({
       window.removeEventListener("storage", handleStorage);
       document.removeEventListener("visibilitychange", handleVisibilityChange);
     };
-  }, []);
+  }, [activeEmployee]);
+
+  useEffect(() => {
+    void loadHistory();
+  }, [activeEmployee]);
 
   useEffect(() => {
     startTransition(() => {
@@ -471,8 +679,11 @@ export function MobileTimesheetApp({
         password: "",
       }));
       setStatus({
-        tone: "warning",
-        message: "Signed out on this device. Log in again to submit more time.",
+        tone: pendingCount > 0 ? "warning" : "idle",
+        message:
+          pendingCount > 0
+            ? "Signed out on this device. Pending day sheets are still saved locally until you log back in and sync them."
+            : "Signed out on this device. Log in again to submit more time.",
       });
     } catch (error) {
       setStatus({
@@ -518,57 +729,14 @@ export function MobileTimesheetApp({
     const nextQueue = [
       ...queue,
       {
-        id: createId(),
+        id: payload.clientSubmissionId ?? createId(),
         payload,
         queuedAt: new Date().toISOString(),
       },
     ];
 
     writeQueue(nextQueue);
-    setPendingCount(nextQueue.length);
-  }
-
-  async function handlePendingSync() {
-    syncPendingCount(setPendingCount);
-
-    if (!navigator.onLine) {
-      setStatus({
-        tone: "warning",
-        message: "Still offline. Pending day sheets will sync automatically once this device reconnects.",
-      });
-      return;
-    }
-
-    if (readQueue().length === 0) {
-      setStatus({
-        tone: "success",
-        message: "No pending day sheets to sync.",
-      });
-      return;
-    }
-
-    setIsSyncingQueue(true);
-
-    try {
-      const result = await flushPendingQueueRequest(setPendingCount, setStatus);
-
-      if (result.remainingCount > 0) {
-        setStatus({
-          tone: "warning",
-          message: `${result.remainingCount} day sheet${result.remainingCount === 1 ? "" : "s"} still pending sync. We'll keep retrying automatically.`,
-        });
-        return;
-      }
-
-      if (result.syncedCount > 0) {
-        setStatus({
-          tone: "success",
-          message: `${result.syncedCount} pending day sheet${result.syncedCount === 1 ? "" : "s"} synced to Postgres.`,
-        });
-      }
-    } finally {
-      setIsSyncingQueue(false);
-    }
+    setPendingQueue(nextQueue);
   }
 
   const pendingSyncLabel = isSyncingQueue
@@ -576,7 +744,7 @@ export function MobileTimesheetApp({
     : `${pendingCount} pending sync${pendingCount === 1 ? "" : "s"}`;
 
   async function handleSubmit() {
-    const payload = buildPayload(form, jobs);
+    const payload = buildPayload(form, jobs, createId());
 
     if (!activeEmployee) {
       setStatus({
@@ -612,10 +780,13 @@ export function MobileTimesheetApp({
           message: "No signal right now, so this day sheet has been queued on this phone for later sync.",
         });
       } else {
-        await postTimesheet(payload);
+        const result = await postTimesheet(payload);
         setStatus({
           tone: "success",
-          message: "Day sheet submitted and synced to Postgres.",
+          message:
+            result?.record?.action === "updated"
+              ? "This day sheet matched an existing day and has been updated instead of duplicated."
+              : "Day sheet submitted and synced to Postgres.",
         });
       }
 
@@ -623,7 +794,8 @@ export function MobileTimesheetApp({
         ...createInitialFormForEmployee(activeEmployee),
         workDate: current.workDate,
       }));
-      void flushPendingQueueRequest(setPendingCount, setStatus);
+      await loadHistory();
+      void syncQueuedSubmissions({ manual: false });
     } catch (error) {
       queueSubmission(payload);
       setStatus({
@@ -661,7 +833,7 @@ export function MobileTimesheetApp({
           <button
             className={styles.statusAction}
             type="button"
-            onClick={handlePendingSync}
+            onClick={() => void syncQueuedSubmissions({ manual: true })}
             disabled={isSyncingQueue}
           >
             {pendingSyncLabel}
@@ -718,6 +890,147 @@ export function MobileTimesheetApp({
                   {isLoggingOut ? "Logging out..." : "Log out"}
                 </button>
               </div>
+            </section>
+
+            <section className={styles.block}>
+              <div className={styles.sectionHeading}>
+                <h2>Sync queue</h2>
+                <p>Queued day sheets stay on this device until they reach Postgres.</p>
+              </div>
+
+              <div className={styles.syncSummary}>
+                <div>
+                  <span>Pending</span>
+                  <strong>{pendingCount}</strong>
+                </div>
+                <div>
+                  <span>Last synced</span>
+                  <strong>{syncActivity.lastSyncedCount}</strong>
+                </div>
+                <div>
+                  <span>Last success</span>
+                  <strong>{formatDisplayDateTime(syncActivity.lastSuccessAt)}</strong>
+                </div>
+                <div>
+                  <span>Last attempt</span>
+                  <strong>{formatDisplayDateTime(syncActivity.lastAttemptAt)}</strong>
+                </div>
+              </div>
+
+              {pendingQueue.length === 0 ? (
+                <p className={styles.emptyState}>No pending day sheets on this device.</p>
+              ) : (
+                <div className={styles.queueList}>
+                  {pendingQueue.map((item) => (
+                    <article className={styles.queueCard} key={item.id}>
+                      <div className={styles.queueCardHeader}>
+                        <strong>{formatDisplayDate(item.payload.workDate)}</strong>
+                        <span>{formatDisplayDateTime(item.queuedAt)}</span>
+                      </div>
+                      <p>{describePendingSubmission(item)}</p>
+                      <span className={styles.queueMeta}>
+                        {formatHours(item.payload.paidHours)}h paid
+                        {item.payload.overnightAllowance ? " | Overnight" : ""}
+                      </span>
+                    </article>
+                  ))}
+                </div>
+              )}
+            </section>
+
+            <section className={styles.block}>
+              <div className={styles.sectionHeading}>
+                <h2>Your time</h2>
+                <p>Review the current and previous weekly periods ending Sunday.</p>
+              </div>
+
+              {history.loading ? (
+                <p className={styles.emptyState}>Loading your recent periods...</p>
+              ) : history.error ? (
+                <p className={styles.emptyState}>{history.error}</p>
+              ) : history.periods.length === 0 ? (
+                <p className={styles.emptyState}>No recent day sheets found for this profile yet.</p>
+              ) : (
+                <div className={styles.periodList}>
+                  {history.periods.map((period) => (
+                    <article className={styles.periodCard} key={period.key}>
+                      <div className={styles.periodHeader}>
+                        <div>
+                          <p className={styles.periodEyebrow}>
+                            {period.key === "current" ? "Current period" : "Previous period"}
+                          </p>
+                          <h3>
+                            {formatDisplayDate(period.weekStart)} to {formatDisplayDate(period.weekEnd)}
+                          </h3>
+                        </div>
+                        <span className={styles.periodStatus}>
+                          {period.status ?? "Not submitted"}
+                        </span>
+                      </div>
+
+                      <div className={styles.summaryStrip}>
+                        <div>
+                          <span>Week ends</span>
+                          <strong>{formatDisplayDate(getWeekEndSunday(period.weekStart))}</strong>
+                        </div>
+                        <div>
+                          <span>Total hours</span>
+                          <strong>{formatHours(period.totalHours)}h</strong>
+                        </div>
+                        <div>
+                          <span>Overnights</span>
+                          <strong>{period.totalOvernights}</strong>
+                        </div>
+                        <div>
+                          <span>Submitted</span>
+                          <strong>{formatDisplayDateTime(period.submittedAt ?? null)}</strong>
+                        </div>
+                      </div>
+
+                      {period.days.length === 0 ? (
+                        <p className={styles.emptyState}>No entries recorded in this week yet.</p>
+                      ) : (
+                        <div className={styles.dayList}>
+                          {period.days.map((day) => (
+                            <article className={styles.dayCard} key={day.workDate}>
+                              <div className={styles.dayHeader}>
+                                <div>
+                                  <strong>{formatDisplayDate(day.workDate)}</strong>
+                                  <span>{entryTypeLabels[day.entryType]}</span>
+                                </div>
+                                <div className={styles.dayTotals}>
+                                  <strong>{formatHours(day.paidHours)}h</strong>
+                                  {day.overnightAllowance ? <span>Overnight</span> : null}
+                                </div>
+                              </div>
+
+                              {day.entries.length > 0 ? (
+                                <div className={styles.historyEntryList}>
+                                  {day.entries.map((entry, index) => (
+                                    <div className={styles.historyEntryRow} key={`${day.workDate}-${index}`}>
+                                      <div>
+                                        <strong>{entry.jobCode ?? entry.jobName ?? "Leave entry"}</strong>
+                                        <span>
+                                          {entry.startTime && entry.finishTime
+                                            ? `${entry.startTime} - ${entry.finishTime}`
+                                            : entry.clientName ?? "Recorded hours"}
+                                        </span>
+                                      </div>
+                                      <strong>{formatHours(entry.hours)}h</strong>
+                                    </div>
+                                  ))}
+                                </div>
+                              ) : null}
+
+                              {day.notes ? <p className={styles.dayNotes}>{day.notes}</p> : null}
+                            </article>
+                          ))}
+                        </div>
+                      )}
+                    </article>
+                  ))}
+                </div>
+              )}
             </section>
 
             <section className={styles.block}>
@@ -946,3 +1259,4 @@ export function MobileTimesheetApp({
     </main>
   );
 }
+

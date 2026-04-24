@@ -279,6 +279,15 @@
   color: #fff7ee;
 }
 
+.syncSummary {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  padding: 14px;
+  border-radius: 22px;
+  background: linear-gradient(135deg, rgba(47, 42, 38, 0.08), rgba(203, 94, 47, 0.08));
+}
+
 .summaryStrip {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -288,6 +297,7 @@
   background: linear-gradient(135deg, rgba(203, 94, 47, 0.1), rgba(38, 33, 28, 0.06));
 }
 
+.syncSummary span,
 .summaryStrip span {
   display: block;
   margin-bottom: 4px;
@@ -298,10 +308,130 @@
   color: #7b5844;
 }
 
+.syncSummary strong,
 .summaryStrip strong {
   font-size: 0.95rem;
   line-height: 1.25;
   color: #251d17;
+}
+
+.emptyState {
+  color: #675346;
+  font-size: 0.9rem;
+  line-height: 1.45;
+}
+
+.queueList,
+.periodList,
+.dayList,
+.historyEntryList {
+  display: grid;
+  gap: 12px;
+}
+
+.queueCard,
+.periodCard,
+.dayCard {
+  display: grid;
+  gap: 10px;
+  padding: 14px;
+  border-radius: 22px;
+  border: 1px solid rgba(104, 77, 57, 0.1);
+}
+
+.queueCard {
+  background: #f7efe4;
+}
+
+.periodCard {
+  background: linear-gradient(135deg, rgba(255, 248, 238, 0.96), rgba(244, 233, 221, 0.96));
+}
+
+.dayCard {
+  background: rgba(255, 255, 255, 0.74);
+}
+
+.queueCardHeader,
+.periodHeader,
+.dayHeader,
+.historyEntryRow {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.queueCardHeader strong,
+.periodHeader h3,
+.dayHeader strong,
+.historyEntryRow strong {
+  color: #221914;
+}
+
+.queueCardHeader span,
+.queueMeta,
+.periodEyebrow,
+.periodStatus,
+.dayHeader span,
+.historyEntryRow span,
+.dayNotes {
+  color: #685245;
+  font-size: 0.82rem;
+  line-height: 1.35;
+}
+
+.queueMeta {
+  font-weight: 700;
+}
+
+.periodHeader {
+  align-items: center;
+}
+
+.periodEyebrow {
+  margin-bottom: 6px;
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: #8a5e49;
+}
+
+.periodHeader h3 {
+  font-size: 1rem;
+  line-height: 1.2;
+}
+
+.periodStatus {
+  white-space: nowrap;
+  border-radius: 999px;
+  padding: 8px 12px;
+  background: rgba(47, 42, 38, 0.08);
+  font-weight: 700;
+}
+
+.dayTotals {
+  text-align: right;
+}
+
+.dayTotals span {
+  display: block;
+  margin-top: 4px;
+}
+
+.historyEntryRow {
+  padding: 10px 12px;
+  border-radius: 18px;
+  background: rgba(246, 236, 223, 0.85);
+}
+
+.historyEntryRow div {
+  display: grid;
+  gap: 3px;
+}
+
+.dayNotes {
+  padding-top: 2px;
 }
 
 .entryList {

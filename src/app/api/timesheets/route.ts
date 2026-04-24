@@ -2,11 +2,48 @@ import { ZodError } from "zod";
 import { NextResponse } from "next/server";
 
 import { getCurrentEmployee } from "@/lib/auth";
-import { createTimesheetEntry } from "@/lib/submissions";
+import { createTimesheetEntry, getTimesheetHistoryForEmployee } from "@/lib/submissions";
 import { isDatabaseConfigured } from "@/lib/db";
 import { timesheetPayloadSchema } from "@/lib/timesheets";
 
 export const runtime = "nodejs";
+
+export async function GET() {
+  try {
+    if (!isDatabaseConfigured()) {
+      return NextResponse.json(
+        { error: "DATABASE_URL is not configured for live timesheet history yet." },
+        { status: 503 },
+      );
+    }
+
+    const currentEmployee = await getCurrentEmployee();
+
+    if (!currentEmployee) {
+      return NextResponse.json(
+        { error: "You must be logged in to review timesheets." },
+        { status: 401 },
+      );
+    }
+
+    const periods = await getTimesheetHistoryForEmployee(currentEmployee.id);
+
+    return NextResponse.json({
+      ok: true,
+      periods,
+    });
+  } catch (error) {
+    return NextResponse.json(
+      {
+        error:
+          error instanceof Error
+            ? error.message
+            : "Unexpected error while loading timesheet history.",
+      },
+      { status: 500 },
+    );
+  }
+}
 
 export async function POST(request: Request) {
   try {

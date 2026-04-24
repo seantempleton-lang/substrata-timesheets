@@ -36,6 +36,7 @@ export type TimesheetPayload = {
   employeeName: string;
   employeeCode?: string;
   workDate: string;
+  clientSubmissionId?: string;
   entryType: EntryType;
   workEntries: TimesheetWorkEntryPayload[];
   leaveHours?: number;
@@ -52,4 +53,41 @@ export type AppBootstrap = {
   databaseReady: boolean;
   mode: "live" | "demo";
   message: string;
+};
+
+export type TimesheetHistoryEntry = {
+  jobCode?: string;
+  jobName?: string;
+  clientName?: string;
+  siteName?: string;
+  startTime?: string;
+  finishTime?: string;
+  hours: number;
+  rateType?: string;
+  notes?: string;
+};
+
+export type TimesheetHistoryDay = {
+  workDate: string;
+  entryType: EntryType;
+  overnightAllowance: boolean;
+  notes?: string;
+  paidHours: number;
+  leaveHours?: number;
+  entries: TimesheetHistoryEntry[];
+};
+
+export type TimesheetHistoryPeriod = {
+  key: "current" | "previous";
+  weekStart: string;
+  weekEnd: string;
+  status?: string;
+  submittedAt?: string;
+  totalHours: number;
+  totalOvernights: number;
+  days: TimesheetHistoryDay[];
+};
+
+export type TimesheetHistoryResponse = {
+  periods: TimesheetHistoryPeriod[];
 };
