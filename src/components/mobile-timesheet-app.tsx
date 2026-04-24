@@ -25,6 +25,11 @@ type SubmissionState = {
   message: string;
 };
 
+type FlushQueueResult = {
+  syncedCount: number;
+  remainingCount: number;
+};
+
 type PendingSubmission = {
   id: string;
   payload: TimesheetPayload;
@@ -161,6 +166,10 @@ function writeQueue(queue: PendingSubmission[]) {
   window.localStorage.setItem(queueStorageKey, JSON.stringify(queue));
 }
 
+function syncPendingCount(setPendingCount: (count: number) => void) {
+  setPendingCount(readQueue().length);
+}
+
 async function postTimesheet(payload: TimesheetPayload) {
   const response = await fetch("/api/timesheets", {
     method: "POST",
@@ -211,16 +220,23 @@ async function postLogout() {
 async function flushPendingQueueRequest(
   setPendingCount: (count: number) => void,
   setStatus: (state: SubmissionState) => void,
-) {
+) : Promise<FlushQueueResult> {
   if (typeof window === "undefined" || !navigator.onLine) {
-    return;
+    syncPendingCount(setPendingCount);
+    return {
+      syncedCount: 0,
+      remainingCount: readQueue().length,
+    };
   }
 
   const queue = readQueue();
 
   if (queue.length === 0) {
     setPendingCount(0);
-    return;
+    return {
+      syncedCount: 0,
+      remainingCount: 0,
+    };
   }
 
   const remaining: PendingSubmission[] = [];
@@ -242,6 +258,11 @@ async function flushPendingQueueRequest(
       message: "Pending offline day sheets were synced to Postgres.",
     });
   }
+
+  return {
+    syncedCount: queue.length - remaining.length,
+    remainingCount: remaining.length,
+  };
 }
 
 export function MobileTimesheetApp({
@@ -267,6 +288,7 @@ export function MobileTimesheetApp({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isSigningIn, setIsSigningIn] = useState(false);
   const [isLoggingOut, setIsLoggingOut] = useState(false);
+  const [isSyncingQueue, setIsSyncingQueue] = useState(false);
   const [status, setStatus] = useState<SubmissionState>({
     tone: bootstrap.databaseReady ? "idle" : "warning",
     message: bootstrap.message,
@@ -302,19 +324,37 @@ export function MobileTimesheetApp({
 
     function handleOffline() {
       setIsOnline(false);
+      syncPendingCount(setPendingCount);
       setStatus({
         tone: "warning",
         message: "You are offline. New day sheets will queue on this device and sync once you reconnect.",
       });
     }
 
+    function handleStorage(event: StorageEvent) {
+      if (event.key === null || event.key === queueStorageKey) {
+        syncPendingCount(setPendingCount);
+      }
+    }
+
+    function handleVisibilityChange() {
+      if (document.visibilityState === "visible") {
+        syncPendingCount(setPendingCount);
+      }
+    }
+
     window.addEventListener("online", handleOnline);
     window.addEventListener("offline", handleOffline);
+    window.addEventListener("storage", handleStorage);
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    syncPendingCount(setPendingCount);
     void flushPendingQueueRequest(setPendingCount, setStatus);
 
     return () => {
       window.removeEventListener("online", handleOnline);
       window.removeEventListener("offline", handleOffline);
+      window.removeEventListener("storage", handleStorage);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
     };
   }, []);
 
@@ -488,6 +528,53 @@ export function MobileTimesheetApp({
     setPendingCount(nextQueue.length);
   }
 
+  async function handlePendingSync() {
+    syncPendingCount(setPendingCount);
+
+    if (!navigator.onLine) {
+      setStatus({
+        tone: "warning",
+        message: "Still offline. Pending day sheets will sync automatically once this device reconnects.",
+      });
+      return;
+    }
+
+    if (readQueue().length === 0) {
+      setStatus({
+        tone: "success",
+        message: "No pending day sheets to sync.",
+      });
+      return;
+    }
+
+    setIsSyncingQueue(true);
+
+    try {
+      const result = await flushPendingQueueRequest(setPendingCount, setStatus);
+
+      if (result.remainingCount > 0) {
+        setStatus({
+          tone: "warning",
+          message: `${result.remainingCount} day sheet${result.remainingCount === 1 ? "" : "s"} still pending sync. We'll keep retrying automatically.`,
+        });
+        return;
+      }
+
+      if (result.syncedCount > 0) {
+        setStatus({
+          tone: "success",
+          message: `${result.syncedCount} pending day sheet${result.syncedCount === 1 ? "" : "s"} synced to Postgres.`,
+        });
+      }
+    } finally {
+      setIsSyncingQueue(false);
+    }
+  }
+
+  const pendingSyncLabel = isSyncingQueue
+    ? "Syncing..."
+    : `${pendingCount} pending sync${pendingCount === 1 ? "" : "s"}`;
+
   async function handleSubmit() {
     const payload = buildPayload(form, jobs);
 
@@ -571,7 +658,14 @@ export function MobileTimesheetApp({
 
         <section className={styles.statusPanel} data-tone={status.tone}>
           <p>{status.message}</p>
-          <span>{pendingCount} pending sync</span>
+          <button
+            className={styles.statusAction}
+            type="button"
+            onClick={handlePendingSync}
+            disabled={isSyncingQueue}
+          >
+            {pendingSyncLabel}
+          </button>
         </section>
 
         {!activeEmployee ? (
