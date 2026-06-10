@@ -349,12 +349,9 @@ export function MobileTimesheetApp({
     email: initialEmployee?.email ?? "",
     password: "",
   });
-  const [pendingQueue, setPendingQueue] = useState<PendingSubmission[]>(() =>
-    typeof window === "undefined" ? [] : readQueue(),
-  );
-  const [isOnline, setIsOnline] = useState(() =>
-    typeof navigator === "undefined" ? true : navigator.onLine,
-  );
+  const [pendingQueue, setPendingQueue] = useState<PendingSubmission[]>([]);
+  const [isOnline, setIsOnline] = useState(true);
+  const [databaseReady, setDatabaseReady] = useState(bootstrap.databaseReady);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isSigningIn, setIsSigningIn] = useState(false);
   const [isLoggingOut, setIsLoggingOut] = useState(false);
@@ -376,6 +373,12 @@ export function MobileTimesheetApp({
   });
 
   const pendingCount = pendingQueue.length;
+  const connectionLabel = !isOnline
+    ? "Offline queueing"
+    : databaseReady
+      ? "Online"
+      : "Demo mode";
+  const headerJob = jobs[0];
   const paidHours =
     form.entryType === "work"
       ? calculateDayPaidHours(
@@ -551,6 +554,7 @@ export function MobileTimesheetApp({
     window.addEventListener("offline", handleOffline);
     window.addEventListener("storage", handleStorage);
     document.addEventListener("visibilitychange", handleVisibilityChange);
+    setIsOnline(navigator.onLine);
     syncPendingQueue(setPendingQueue);
     void syncQueuedSubmissions({ manual: false });
 
@@ -593,6 +597,7 @@ export function MobileTimesheetApp({
       const response = await fetch("/api/jobs", { cache: "no-store" });
       const data = (await response.json()) as AppBootstrap;
       setJobs(data.jobs);
+      setDatabaseReady(data.databaseReady);
       setStatus({
         tone: data.databaseReady ? "success" : "warning",
         message: data.message,
@@ -811,33 +816,45 @@ export function MobileTimesheetApp({
   }
 
   return (
-    <main className={styles.shell}>
+    <main className={styles.shell} id="top">
       <section className={styles.handset}>
         <header className={styles.hero}>
-          <div>
-            <p className={styles.eyebrow}>SubStrata Field Timesheets</p>
-            <h1>McMillan Drilling</h1>
+          <div className={styles.brandLockup}>
+            <img className={styles.brandMark} src="/favicon.svg" alt="SubStrata" />
+            <div>
+              <h1>SUBSTRATA</h1>
+              <p>FIELD OPERATIONS</p>
+            </div>
           </div>
           <div className={styles.heroMeta}>
-            <span className={isOnline ? styles.online : styles.offline}>
-              {isOnline ? "Online" : "Offline queueing"}
+            <span className={styles.jobChip}>
+              <span>{headerJob?.code ?? "No job"}</span>
+              <strong>{connectionLabel}</strong>
+              <i className={isOnline && databaseReady ? styles.dotOnline : styles.dotWarning} />
             </span>
-            <button className={styles.ghostButton} type="button" onClick={refreshJobs}>
-              Refresh data
-            </button>
+            <span className={styles.userChip}>{activeEmployee?.initials ?? ""}</span>
           </div>
         </header>
 
-        <section className={styles.statusPanel} data-tone={status.tone}>
-          <p>{status.message}</p>
-          <button
-            className={styles.statusAction}
-            type="button"
-            onClick={() => void syncQueuedSubmissions({ manual: true })}
-            disabled={isSyncingQueue}
-          >
-            {pendingSyncLabel}
-          </button>
+        <section className={styles.connectionCard}>
+          <div>
+            <p className={styles.kicker}>Server connection</p>
+            <strong>{connectionLabel}</strong>
+            <span>{status.message}</span>
+          </div>
+          <div className={styles.connectionActions}>
+            <button className={styles.ghostButton} type="button" onClick={refreshJobs}>
+              Refresh data
+            </button>
+            <button
+              className={styles.statusAction}
+              type="button"
+              onClick={() => void syncQueuedSubmissions({ manual: true })}
+              disabled={isSyncingQueue}
+            >
+              {pendingSyncLabel}
+            </button>
+          </div>
         </section>
 
         {!activeEmployee ? (
@@ -847,11 +864,11 @@ export function MobileTimesheetApp({
               <p>Sign in with your mobile auth account linked to your personnel profile.</p>
             </div>
             <label className={styles.field}>
-              <span>Email</span>
+              <span>Username</span>
               <input
-                autoComplete="email"
-                type="email"
-                placeholder="rahulnegi@drilling.co.nz"
+                autoComplete="username"
+                type="text"
+                placeholder="FirstnameLastname"
                 value={login.email}
                 onChange={(event) => setLogin((current) => ({ ...current, email: event.target.value }))}
               />

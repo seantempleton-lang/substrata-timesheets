@@ -10,5 +10,12 @@ export default function manifest(): MetadataRoute.Manifest {
     background_color: "#efe4d2",
     theme_color: "#efe4d2",
     lang: "en-NZ",
+    icons: [
+      {
+        src: "/favicon.svg",
+        sizes: "any",
+        type: "image/svg+xml",
+      },
+    ],
   };
 }

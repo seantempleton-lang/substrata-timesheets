@@ -7,6 +7,11 @@ export const metadata: Metadata = {
   description:
     "Mobile-only timesheet capture for field crews, with project lookup and Postgres sync for supervisor review.",
   applicationName: "SubStrata Field Timesheets",
+  icons: {
+    icon: "/favicon.svg",
+    shortcut: "/favicon.svg",
+    apple: "/favicon.svg",
+  },
   appleWebApp: {
     capable: true,
     statusBarStyle: "black-translucent",
