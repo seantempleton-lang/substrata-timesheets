@@ -316,6 +316,48 @@
   background: #ffffff;
 }
 
+.passwordControl {
+  position: relative;
+}
+
+.passwordControl input {
+  padding-right: 58px;
+}
+
+.revealButton {
+  position: absolute;
+  top: 50%;
+  right: 8px;
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: #717782;
+  transform: translateY(-50%);
+}
+
+.revealButton:focus-visible {
+  outline: 2px solid #4b8bd8;
+  outline-offset: 2px;
+}
+
+.revealButton svg {
+  width: 22px;
+  height: 22px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.revealButton[aria-pressed="true"] {
+  color: #111319;
+}
+
 .field textarea {
   resize: vertical;
   min-height: 96px;

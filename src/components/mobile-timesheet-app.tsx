@@ -356,6 +356,7 @@ export function MobileTimesheetApp({
   const [isSigningIn, setIsSigningIn] = useState(false);
   const [isLoggingOut, setIsLoggingOut] = useState(false);
   const [isSyncingQueue, setIsSyncingQueue] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
   const [syncActivity, setSyncActivity] = useState<SyncActivityState>({
     lastAttemptAt: null,
     lastSuccessAt: null,
@@ -875,13 +876,36 @@ export function MobileTimesheetApp({
             </label>
             <label className={styles.field}>
               <span>Password</span>
-              <input
-                autoComplete="current-password"
-                type="password"
-                placeholder="Enter your password"
-                value={login.password}
-                onChange={(event) => setLogin((current) => ({ ...current, password: event.target.value }))}
-              />
+              <div className={styles.passwordControl}>
+                <input
+                  autoComplete="current-password"
+                  type={showPassword ? "text" : "password"}
+                  placeholder="Enter your password"
+                  value={login.password}
+                  onChange={(event) => setLogin((current) => ({ ...current, password: event.target.value }))}
+                />
+                <button
+                  className={styles.revealButton}
+                  type="button"
+                  aria-label={showPassword ? "Hide password" : "Show password"}
+                  aria-pressed={showPassword}
+                  onClick={() => setShowPassword((current) => !current)}
+                >
+                  {showPassword ? (
+                    <svg aria-hidden="true" viewBox="0 0 24 24">
+                      <path d="M2.5 12s3.4-6 9.5-6 9.5 6 9.5 6-3.4 6-9.5 6-9.5-6-9.5-6Z" />
+                      <circle cx="12" cy="12" r="3" />
+                    </svg>
+                  ) : (
+                    <svg aria-hidden="true" viewBox="0 0 24 24">
+                      <path d="M3 3l18 18" />
+                      <path d="M10.6 5.2A9.8 9.8 0 0 1 12 5c6.1 0 9.5 7 9.5 7a15.2 15.2 0 0 1-3.1 3.8" />
+                      <path d="M6.6 6.7C3.9 8.5 2.5 12 2.5 12s3.4 7 9.5 7a9.4 9.4 0 0 0 4.1-.9" />
+                      <path d="M9.9 9.9a3 3 0 0 0 4.2 4.2" />
+                    </svg>
+                  )}
+                </button>
+              </div>
             </label>
             <button className={styles.primaryButton} type="button" onClick={handleLogin} disabled={isSigningIn}>
               {isSigningIn ? "Signing in..." : "Log in"}
