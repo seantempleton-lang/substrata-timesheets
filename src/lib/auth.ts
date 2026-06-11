@@ -58,11 +58,12 @@ export async function verifyPassword(password: string, storedHash: string): Prom
   return timingSafeEqual(derived, expected);
 }
 
-export async function getAuthAccountByEmail(email: string): Promise<AuthAccountRow | null> {
+export async function getAuthAccountByUsername(username: string): Promise<AuthAccountRow | null> {
   if (!isDatabaseConfigured()) {
     return null;
   }
 
+  const normalizedUsername = username.replace(/[^A-Za-z0-9]/g, "").toLowerCase();
   const db = getDb();
   const [row] = await db.unsafe<AuthAccountRow[]>(
     `
@@ -82,10 +83,14 @@ export async function getAuthAccountByEmail(email: string): Promise<AuthAccountR
       join app_users au on au.id = maa.user_id
       where maa.is_active = true
         and au.is_active = true
-        and lower(maa.login_email) = lower($1::text)
+        and (
+          lower(maa.login_email) = lower($1::text)
+          or lower(regexp_replace(split_part(maa.login_email, '@', 1), '[^A-Za-z0-9]', '', 'g')) = $2::text
+          or lower(regexp_replace(au.full_name, '[^A-Za-z0-9]', '', 'g')) = $2::text
+        )
       limit 1
     `,
-    [email],
+    [username, normalizedUsername],
   );
 
   return row ?? null;

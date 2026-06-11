@@ -40,7 +40,7 @@ type PendingSubmission = {
 };
 
 type LoginState = {
-  email: string;
+  username: string;
   password: string;
 };
 
@@ -346,7 +346,7 @@ export function MobileTimesheetApp({
   const [form, setForm] = useState<FormState>(() => createInitialFormForEmployee(initialEmployee));
   const [activeEmployee, setActiveEmployee] = useState<EmployeeOption | null>(initialEmployee);
   const [login, setLogin] = useState<LoginState>({
-    email: initialEmployee?.email ?? "",
+    username: "",
     password: "",
   });
   const [pendingQueue, setPendingQueue] = useState<PendingSubmission[]>([]);
@@ -663,7 +663,7 @@ export function MobileTimesheetApp({
     setActiveEmployee(employee);
     setForm(createInitialFormForEmployee(employee));
     setLogin({
-      email: employee.email ?? "",
+      username: "",
       password: "",
     });
     setStatus({
@@ -680,7 +680,7 @@ export function MobileTimesheetApp({
       setActiveEmployee(null);
       setForm(createInitialForm());
       setLogin((current) => ({
-        email: current.email,
+        username: current.username,
         password: "",
       }));
       setStatus({
@@ -701,10 +701,10 @@ export function MobileTimesheetApp({
   }
 
   async function handleLogin() {
-    if (!login.email || !login.password) {
+    if (!login.username || !login.password) {
       setStatus({
         tone: "error",
-        message: "Email and password are required.",
+        message: "Username and password are required.",
       });
       return;
     }
@@ -869,8 +869,8 @@ export function MobileTimesheetApp({
                 autoComplete="username"
                 type="text"
                 placeholder="FirstnameLastname"
-                value={login.email}
-                onChange={(event) => setLogin((current) => ({ ...current, email: event.target.value }))}
+                value={login.username}
+                onChange={(event) => setLogin((current) => ({ ...current, username: event.target.value }))}
               />
             </label>
             <label className={styles.field}>
@@ -901,7 +901,7 @@ export function MobileTimesheetApp({
                   <span>
                     {activeEmployee.employeeCode} - {activeEmployee.roleTitle}
                   </span>
-                  <span>{activeEmployee.email ?? login.email}</span>
+                  <span>{activeEmployee.email ?? login.username}</span>
                 </div>
                 <button className={styles.ghostButton} type="button" onClick={handleLogout} disabled={isLoggingOut}>
                   {isLoggingOut ? "Logging out..." : "Log out"}

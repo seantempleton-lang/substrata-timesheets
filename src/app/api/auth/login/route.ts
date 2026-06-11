@@ -3,7 +3,7 @@ import { z } from "zod";
 
 import {
   createAuthSession,
-  getAuthAccountByEmail,
+  getAuthAccountByUsername,
   setAuthSessionCookie,
   verifyPassword,
 } from "@/lib/auth";
@@ -12,7 +12,7 @@ import { isDatabaseConfigured } from "@/lib/db";
 export const runtime = "nodejs";
 
 const loginSchema = z.object({
-  email: z.string().email(),
+  username: z.string().trim().min(1),
   password: z.string().min(1),
 });
 
@@ -26,11 +26,11 @@ export async function POST(request: Request) {
     }
 
     const body = loginSchema.parse(await request.json());
-    const account = await getAuthAccountByEmail(body.email);
+    const account = await getAuthAccountByUsername(body.username);
 
     if (!account) {
       return NextResponse.json(
-        { error: "Invalid email or password." },
+        { error: "Invalid username or password." },
         { status: 401 },
       );
     }
@@ -39,7 +39,7 @@ export async function POST(request: Request) {
 
     if (!isValid) {
       return NextResponse.json(
-        { error: "Invalid email or password." },
+        { error: "Invalid username or password." },
         { status: 401 },
       );
     }
